@@ -1,0 +1,11 @@
+version: '3.3'
+
+services:
+  selenium-chrome:
+    image: seleniarm/standalone-chromium:latest
+    volumes:
+      - ./screens/:/home/seluser/Downloads/
+    ports:
+      - "4444:4444" # Expose the Selenium port if needed
+      - "7900:7900"
+    shm_size: 2gb  # Recommended for Chrome to avoid crashes
