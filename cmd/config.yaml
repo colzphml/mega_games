@@ -1,0 +1,10 @@
+app:
+  source:
+    type: "discord"
+    token: "MTAzNDIxNTg1MzgxMTU4MTAwOA.Gb_ZA2.6rq5BAXAIk4ND218CP8MQ6vWFvjxj3ENYHMXU0"
+    channel_id: "1034218876147343453"
+  target:
+    type: "telegram"
+    token: "123"
+    channel_id: "123"
+  deep_history: 10

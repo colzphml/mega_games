@@ -1,0 +1,41 @@
+# Mac OS
+.DS_Store
+.AppleDouble
+.LSOverride
+# Избавляемся от нежелательных файлов, которые могут быть созданы на Mac
+__MACOSX/
+# Избавляемся от истории командной строки, создаваемой в терминале Mac
+.bash_history
+# Избавляемся от временных файлов, создаваемых Mac OS
+.AppleDesktop
+.AppleDb
+.AppleDbIndex
+.AppleMail
+.AppleShowAllFiles
+.Trashes
+# Избавляемся от файлов и директорий, создаваемых Xcode
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcworkspace
+*.xcuserstate
+project.xcworkspace/
+project.xcodeproj/
+# Избавляемся от файлов и директорий, создаваемых JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+# Избавляемся от файлов и директорий, создаваемых Visual Studio Code
+.vscode/
+# Избавляемся от файлов и директорий, создаваемых Go
+*.exe
+*.exe~
+*.test
+*.test.exe
+*.test~
+*.tmp
+*.log
+*.out
+*.prof
