@@ -2,12 +2,14 @@ package target
 
 import (
 	"context"
+	"sync"
 
 	"github.com/colzphml/mega_games/internal/targetSM/telegram"
 	"github.com/colzphml/mega_games/pkg/config"
 )
 
 type Targeter interface {
+	ProceedFiles(ctx context.Context, wg *sync.WaitGroup)
 	Close()
 }
 

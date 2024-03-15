@@ -2,13 +2,15 @@ package source
 
 import (
 	"context"
+	"sync"
 
 	"github.com/colzphml/mega_games/internal/sourceSM/discord"
 	"github.com/colzphml/mega_games/pkg/config"
 )
 
 type Sourcer interface {
-	Close()
+	ReadMessages(ctx context.Context, wg *sync.WaitGroup, messagesChan chan<- string)
+	Close() error
 }
 
 func NewSource(ctx context.Context, cfg *config.Config) (Sourcer, error) {

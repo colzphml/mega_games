@@ -1,7 +1,7 @@
 app:
   middle:
     type: "selenium"
-    middle_url: "http://localhost:4444/wd/hub"
+    middle_url: "http://selenium-chrome:4444/wd/hub"
   source:
     type: "discord"
     token: "MTAzNDIxNTg1MzgxMTU4MTAwOA.Gb_ZA2.6rq5BAXAIk4ND218CP8MQ6vWFvjxj3ENYHMXU0"

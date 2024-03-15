@@ -34,7 +34,13 @@ type Config struct {
 			Token     string `yaml:"token" env:"TARGET_TOKEN"`           // Token is the token used to authenticate to the target.
 			ChannelID string `yaml:"channel_id" env:"TARGET_CHANNEL_ID"` // ChannelID is the ID of the channel to send messages to.
 		} `yaml:"target"`
-		DeepHistory int `yaml:"deep_history" env:"DEEP_HISTORY"` // DeepHistory is the deep of history message when application start.
+		Middle struct {
+			Type      string `yaml:"type" env:"MIDDLE_TYPE"`      // Type is the type of the middle.
+			MiddleUrl string `yaml:"middle_url" env:"MIDDLE_URL"` // MiddleUrl is the url of the middle.
+		} `yaml:"middle"`
+		DeepHistory     int    `yaml:"deep_history" env:"DEEP_HISTORY"`           // DeepHistory is the deep of history message when application start.
+		FileStoragePath string `yaml:"file_storage_path" env:"FILE_STORAGE_PATH"` // FileStoragePath is the path to store the file.
+		GamesUrl        string `yaml:"games_url" env:"GAMES_URL"`                 // GamesUrl is the url of the games.
 	} `yaml:"app"`
 }
 
@@ -84,6 +90,18 @@ func validateConfig(c *Config) error {
 	}
 	if c.App.DeepHistory < 1 {
 		return fmt.Errorf("DEEP_HISTORY must be greater than 0")
+	}
+	if c.App.Middle.Type == "" {
+		return fmt.Errorf("missing MIDDLE_TYPE configuration")
+	}
+	if c.App.Middle.MiddleUrl == "" {
+		return fmt.Errorf("missing MIDDLE_URL configuration")
+	}
+	if c.App.FileStoragePath == "" {
+		return fmt.Errorf("missing FILE_STORAGE_PATH configuration")
+	}
+	if c.App.GamesUrl == "" {
+		return fmt.Errorf("missing GAMES_URL configuration")
 	}
 	return nil
 }
