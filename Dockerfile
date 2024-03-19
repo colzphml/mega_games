@@ -17,10 +17,10 @@ RUN go mod download && go mod verify
 
 WORKDIR /app/cmd
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-  -ldflags "-X github.com/st-iteco/discovery-api/internal/app.buildVersion=$VERSION \
-            -X 'github.com/st-iteco/discovery-api/internal/app.buildDate=$(date '+%Y-%m-%d %H:%M:%S')' \
-            -X github.com/st-iteco/discovery-api/internal/app.buildCommit=$COMMIT" \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+  -ldflags "-X github.com/colzphml/mega_games/internal/app.buildVersion=$VERSION \
+            -X 'github.com/colzphml/mega_games/internal/app.buildDate=$(date '+%Y-%m-%d %H:%M:%S')' \
+            -X github.com/colzphml/mega_games/internal/app.buildCommit=$COMMIT" \
   -a -installsuffix cgo -o app .
 
 FROM alpine:latest as final

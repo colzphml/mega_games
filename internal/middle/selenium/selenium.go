@@ -55,21 +55,21 @@ func (c *Client) proceedUrl(ctx context.Context, url string) error {
 		return fmt.Errorf("error creating selenium session: %w", err)
 	}
 	defer wd.Quit()
-
+	log.Info().Msg("COLZ:1")
 	if err := wd.MaximizeWindow(""); err != nil {
 		return fmt.Errorf("error maximizing window: %w", err)
 	}
-
+	log.Info().Msg("COLZ:2")
 	if err := wd.Get(url); err != nil {
 		return fmt.Errorf("error navigating to page: %w", err)
 	}
-
+	log.Info().Msg("COLZ:3")
 	wd.SetImplicitWaitTimeout(2 * time.Second)
-
+	log.Info().Msg("COLZ:4")
 	if err := interactWithPage(wd); err != nil {
 		return fmt.Errorf("error interacting with page: %w", err)
 	}
-
+	log.Info().Msg("COLZ:5")
 	gamenumber := extractGameNumber(url)
 	return waitForFileAndRename(ctx, c.FileStoragePath, "game-recap.jpeg", gamenumber+".jpeg")
 }

@@ -90,6 +90,9 @@ func BuildApp() {
 	middleService.Close()
 	log.Info().Msg("Middle client stopped")
 
+	targetSM.Close()
+	log.Info().Msg("Target client stopped")
+
 	wg.Wait() // Ensure all goroutines have finished
 	log.Info().Msg("Application stopped gracefully")
 }

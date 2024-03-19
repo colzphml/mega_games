@@ -108,7 +108,7 @@ func extractURL(fieldValue string) (string, error) {
 func (c *Client) ReadMessages(ctx context.Context, wg *sync.WaitGroup, messagesChan chan<- string) {
 	defer wg.Done()
 
-	c.ReadLastMessages(ctx, messagesChan, true)
+	c.ReadLastMessages(ctx, messagesChan, false)
 
 	log.Info().Msg("Discord message listener started")
 	messageHandler := func(s *discordgo.Session, m *discordgo.MessageCreate) {

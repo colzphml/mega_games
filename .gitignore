@@ -39,3 +39,7 @@ project.xcodeproj/
 *.log
 *.out
 *.prof
+
+**/config.yaml
+
+**/docker-compose.yml
