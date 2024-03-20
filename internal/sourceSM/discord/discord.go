@@ -45,42 +45,61 @@ func (c *Client) Close() error {
 	return c.Dg.Close()
 }
 
-func (c *Client) processMessageEmbeds(message *discordgo.Message, messagesChan chan<- string, firstFlag bool) {
+func (c *Client) processMessageEmbeds(message *discordgo.Message, messagesChan chan<- string, processInitialMessages bool) {
 	if len(message.Embeds) == 0 {
 		return
 	}
-	flag := false
+
 	for _, embed := range message.Embeds {
 		if embed.Fields == nil {
 			continue
 		}
+
 		for _, field := range embed.Fields {
-			if !strings.Contains(field.Value, "**") || !strings.Contains(field.Value, "MEGA/games") {
-				continue
-			}
-			url, err := extractURL(field.Value)
-			if err != nil {
-				log.Error().Err(err).Msg("Error extracting URL from message")
-				continue
-			}
-			for _, cashedURL := range c.Cash {
-				if cashedURL == url {
-					flag = true
-					break
+			// Optimized check for the substring that applies to both cases
+			if strings.Contains(field.Value, "MEGA") {
+				switch {
+				case strings.Contains(field.Value, "**") && strings.Contains(field.Value, "/games"):
+					url, err := extractURL(field.Value)
+					if err != nil {
+						log.Error().Err(err).Msg("Error extracting URL from message")
+						continue
+					}
+
+					// Check if URL is already cached
+					if !contains(c.Cash, url) {
+						if !processInitialMessages {
+							messagesChan <- url
+						}
+						c.Cash = append(c.Cash, url)
+
+						// Evict the oldest URL if the cache exceeds 50 entries
+						if len(c.Cash) > 50 {
+							c.Cash = c.Cash[1:]
+						}
+					}
+
+				case strings.Contains(field.Value, "has advanced to"):
+					// Specific logic for the second case
+					log.Info().Msg("MEGA has advanced to: " + field.Value)
+					// if !processInitialMessages {
+					// 	log.Info().Msg("MEGA has advanced to: " + field.Value)
+					// 	//messagesChan <- "MEGA has advanced to: " + field.Value
+					// }
 				}
-			}
-			if !flag {
-				if !firstFlag {
-					messagesChan <- url
-				}
-				c.Cash = append(c.Cash, url)
-				if len(c.Cash) > 50 {
-					c.Cash = c.Cash[1:]
-				}
-				flag = false
 			}
 		}
 	}
+}
+
+// Helper function to check if the slice contains a string
+func contains(slice []string, str string) bool {
+	for _, item := range slice {
+		if item == str {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) ReadLastMessages(ctx context.Context, messagesChan chan<- string, firstFlag bool) {
