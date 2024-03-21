@@ -1,0 +1,29 @@
+version: '3.3'
+
+services:
+  selenium-chrome:
+    image: seleniarm/standalone-chromium:latest
+    # image: selenium/standalone-chrome:latest
+    volumes:
+      - ./screens/:/home/seluser/Downloads/
+    ports:
+      - "4444:4444"
+      - "7900:7900"
+    shm_size: 2gb
+
+  myapp: # Define your application service
+    build: 
+      context: . # Ensure this points to the directory containing your Dockerfile
+      dockerfile: Dockerfile # Specify the name of your Dockerfile if not default
+      args: 
+        VERSION: "1.0" # Set this as per your requirements
+        COMMIT: "abcd1234" # Set this as per your requirements
+    volumes:
+      - ./config.yaml:/mega/cmd/config.yaml
+      - ./MEGA_games.csv:/mega/MEGA_games.csv
+      - ./MEGA_teams.csv:/mega/MEGA_teams.csv
+      - ./screens/:/mega/screens/
+    environment:
+      TZ: Europe/Moscow
+    depends_on:
+      - selenium-chrome # Optional: if your app needs to wait for Selenium service to be up
