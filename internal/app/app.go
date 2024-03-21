@@ -8,9 +8,11 @@ import (
 	"syscall"
 
 	"github.com/colzphml/mega_games/internal/middle"
+	"github.com/colzphml/mega_games/internal/model"
 	source "github.com/colzphml/mega_games/internal/sourceSM"
 	target "github.com/colzphml/mega_games/internal/targetSM"
 	"github.com/colzphml/mega_games/pkg/config"
+
 	"github.com/rs/zerolog"
 )
 
@@ -71,16 +73,20 @@ func BuildApp() {
 	}
 
 	messagesChan := make(chan string)
+	targetChan := make(chan model.TargetMessage)
 	wg := &sync.WaitGroup{}
 
 	wg.Add(1)
-	go sourceSM.ReadMessages(ctx, wg, messagesChan)
+	go sourceSM.ReadMessages(ctx, wg, messagesChan, targetChan)
 
 	wg.Add(1)
 	go middleService.ReadMessages(ctx, wg, messagesChan)
 
 	wg.Add(1)
 	go targetSM.ProceedFiles(ctx, wg)
+
+	wg.Add(1)
+	go targetSM.ProceedSourceMessages(ctx, wg, targetChan)
 
 	<-ctx.Done() // Wait for the context to be cancelled
 
@@ -92,6 +98,9 @@ func BuildApp() {
 
 	targetSM.Close()
 	log.Info().Msg("Target client stopped")
+
+	close(messagesChan)
+	close(targetChan)
 
 	wg.Wait() // Ensure all goroutines have finished
 	log.Info().Msg("Application stopped gracefully")

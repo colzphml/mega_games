@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/pkg/config"
 	"github.com/rs/zerolog"
 
@@ -21,10 +22,11 @@ const fileExtension = ".jpeg"
 const processedFilePrefix = "game-recap"
 
 type Client struct {
-	Bot       *tgbotapi.BotAPI
-	ChatId    string
-	Directory string
-	UrlPart   string
+	Bot          *tgbotapi.BotAPI
+	ChatCommonId string
+	ChatNewsId   string
+	Directory    string
+	UrlPart      string
 }
 
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
@@ -38,10 +40,11 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 	return &Client{
-		Bot:       bot,
-		ChatId:    cfg.App.Target.ChannelID,
-		Directory: cfg.App.FileStoragePath,
-		UrlPart:   cfg.App.GamesUrl,
+		Bot:          bot,
+		ChatCommonId: cfg.App.Target.CommonChannelID,
+		ChatNewsId:   cfg.App.Target.NewsChannelID,
+		Directory:    cfg.App.FileStoragePath,
+		UrlPart:      cfg.App.GamesUrl,
 	}, nil
 }
 
@@ -113,15 +116,56 @@ func (c *Client) ProceedFiles(ctx context.Context, wg *sync.WaitGroup) {
 	}
 }
 
-func (c *Client) sendImage(fileName string) error {
-	chatId, err := strconv.ParseInt(c.ChatId, 10, 64)
+func (c *Client) ProceedSourceMessages(ctx context.Context, wg *sync.WaitGroup, targetChan <-chan model.TargetMessage) {
+	defer wg.Done()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("context done, stopping source messages processing")
+			return
+		case message := <-targetChan:
+			switch message.Action {
+			case "news":
+				err := c.sendNewsMessage(message.Value)
+				if err != nil {
+					log.Error().Err(err).Msg("failed to send news message")
+				}
+			case "schedule":
+				log.Info().Msg("schedule message received" + message.Value)
+			default:
+				log.Error().Msg("unknown message type")
+			}
+		}
+	}
+}
+
+func (c *Client) sendNewsMessage(message string) error {
+	chatNewsId, err := strconv.ParseInt(c.ChatNewsId, 10, 64)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to convert chatId to int")
+		log.Error().Err(err).Msg("failed to convert chatNewsId to int")
+		return err
+	}
+
+	msg := tgbotapi.NewMessage(chatNewsId, message)
+	if _, err := c.Bot.Send(msg); err != nil {
+		log.Error().Err(err).Msg("failed to send message")
+		return err
+	} else {
+		log.Info().Str("message", message).Msg("message sent")
+	}
+	return nil
+}
+
+func (c *Client) sendImage(fileName string) error {
+	chatCommonId, err := strconv.ParseInt(c.ChatCommonId, 10, 64)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to convert chatCommonId to int")
 		return err
 	}
 
 	filePath := filepath.Join(c.Directory, fileName)
-	msg := tgbotapi.NewPhotoUpload(chatId, filePath)
+	msg := tgbotapi.NewPhotoUpload(chatCommonId, filePath)
 	gameNumber := strings.TrimSuffix(fileName, fileExtension)
 	fullURL := c.UrlPart + gameNumber
 	msg.Caption = fullURL

@@ -8,8 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/pkg/config"
+
+	"github.com/bwmarrin/discordgo"
 	"github.com/rs/zerolog"
 )
 
@@ -20,6 +22,8 @@ type Client struct {
 	Cash        []string
 	ChannelId   string
 	HistoryDeep int
+	MessageChan chan<- string
+	TargeChan   chan<- model.TargetMessage
 }
 
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
@@ -45,21 +49,22 @@ func (c *Client) Close() error {
 	return c.Dg.Close()
 }
 
-func (c *Client) processMessageEmbeds(message *discordgo.Message, messagesChan chan<- string, processInitialMessages bool) {
+func (c *Client) processMessageEmbeds(message *discordgo.Message, processInitialMessages bool) {
 	if len(message.Embeds) == 0 {
 		return
 	}
 
 	for _, embed := range message.Embeds {
-		if embed.Fields == nil {
-			continue
-		}
-
-		for _, field := range embed.Fields {
-			// Optimized check for the substring that applies to both cases
-			if strings.Contains(field.Value, "MEGA") {
-				switch {
-				case strings.Contains(field.Value, "**") && strings.Contains(field.Value, "/games"):
+		switch {
+		case strings.Contains(embed.Title, "has advanced to"):
+			c.TargeChan <- model.TargetMessage{
+				Action: "news",
+				Value:  embed.Title,
+			}
+		case embed.Fields != nil:
+			for _, field := range embed.Fields {
+				// Optimized check for the substring that applies to both cases
+				if strings.Contains(field.Value, "**") && strings.Contains(field.Value, "MEGA/games") {
 					url, err := extractURL(field.Value)
 					if err != nil {
 						log.Error().Err(err).Msg("Error extracting URL from message")
@@ -69,7 +74,7 @@ func (c *Client) processMessageEmbeds(message *discordgo.Message, messagesChan c
 					// Check if URL is already cached
 					if !contains(c.Cash, url) {
 						if !processInitialMessages {
-							messagesChan <- url
+							c.MessageChan <- url
 						}
 						c.Cash = append(c.Cash, url)
 
@@ -78,14 +83,6 @@ func (c *Client) processMessageEmbeds(message *discordgo.Message, messagesChan c
 							c.Cash = c.Cash[1:]
 						}
 					}
-
-				case strings.Contains(field.Value, "has advanced to"):
-					// Specific logic for the second case
-					log.Info().Msg("MEGA has advanced to: " + field.Value)
-					// if !processInitialMessages {
-					// 	log.Info().Msg("MEGA has advanced to: " + field.Value)
-					// 	//messagesChan <- "MEGA has advanced to: " + field.Value
-					// }
 				}
 			}
 		}
@@ -102,7 +99,7 @@ func contains(slice []string, str string) bool {
 	return false
 }
 
-func (c *Client) ReadLastMessages(ctx context.Context, messagesChan chan<- string, firstFlag bool) {
+func (c *Client) ReadLastMessages(ctx context.Context, firstFlag bool) {
 	time.Sleep(5 * time.Second)
 	messages, err := c.Dg.ChannelMessages(c.ChannelId, c.HistoryDeep, "", "", "")
 	if err != nil {
@@ -111,7 +108,7 @@ func (c *Client) ReadLastMessages(ctx context.Context, messagesChan chan<- strin
 	}
 
 	for _, m := range messages {
-		c.processMessageEmbeds(m, messagesChan, firstFlag)
+		c.processMessageEmbeds(m, firstFlag)
 	}
 }
 
@@ -124,14 +121,17 @@ func extractURL(fieldValue string) (string, error) {
 	return fieldValue[start:end], nil
 }
 
-func (c *Client) ReadMessages(ctx context.Context, wg *sync.WaitGroup, messagesChan chan<- string) {
+func (c *Client) ReadMessages(ctx context.Context, wg *sync.WaitGroup, messagesChan chan<- string, targetChan chan<- model.TargetMessage) {
 	defer wg.Done()
 
-	c.ReadLastMessages(ctx, messagesChan, false)
+	c.MessageChan = messagesChan
+	c.TargeChan = targetChan
+
+	c.ReadLastMessages(ctx, true)
 
 	log.Info().Msg("Discord message listener started")
 	messageHandler := func(s *discordgo.Session, m *discordgo.MessageCreate) {
-		c.ReadLastMessages(ctx, messagesChan, false)
+		c.ReadLastMessages(ctx, false)
 	}
 
 	c.Dg.AddHandler(messageHandler)
@@ -142,6 +142,6 @@ func (c *Client) ReadMessages(ctx context.Context, wg *sync.WaitGroup, messagesC
 	}
 
 	<-ctx.Done()
-	c.Dg.Close()
+	//c.Dg.Close()
 	log.Info().Msg("Stopping Discord message listener...")
 }

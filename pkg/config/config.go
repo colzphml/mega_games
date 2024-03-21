@@ -30,9 +30,10 @@ type Config struct {
 			ChannelID string `yaml:"channel_id" env:"SOURCE_CHANNEL_ID"` // ChannelID is the ID of the channel to listen to.
 		} `yaml:"source"`
 		Target struct {
-			Type      string `yaml:"type" env:"TARGET_TYPE"`             // Type is the type of the target.
-			Token     string `yaml:"token" env:"TARGET_TOKEN"`           // Token is the token used to authenticate to the target.
-			ChannelID string `yaml:"channel_id" env:"TARGET_CHANNEL_ID"` // ChannelID is the ID of the channel to send messages to.
+			Type            string `yaml:"type" env:"TARGET_TYPE"`                           // Type is the type of the target.
+			Token           string `yaml:"token" env:"TARGET_TOKEN"`                         // Token is the token used to authenticate to the target.
+			CommonChannelID string `yaml:"common_channel_id" env:"TARGET_COMMON_CHANNEL_ID"` // ChannelID is the ID of the channel to send messages to.
+			NewsChannelID   string `yaml:"news_channel_id" env:"TARGET_NEWS_CHANNEL_ID"`     // ChannelID is the ID of the channel to send messages to.
 		} `yaml:"target"`
 		Middle struct {
 			Type      string `yaml:"type" env:"MIDDLE_TYPE"`      // Type is the type of the middle.
@@ -85,8 +86,11 @@ func validateConfig(c *Config) error {
 	if c.App.Target.Token == "" {
 		return fmt.Errorf("missing TARGET_TOKEN configuration")
 	}
-	if c.App.Target.ChannelID == "" {
-		return fmt.Errorf("missing TARGET_CHANNEL_ID configuration")
+	if c.App.Target.CommonChannelID == "" {
+		return fmt.Errorf("missing TARGET_COMMON_CHANNEL_ID configuration")
+	}
+	if c.App.Target.NewsChannelID == "" {
+		return fmt.Errorf("missing TARGET_NEWS_CHANNEL_ID configuration")
 	}
 	if c.App.DeepHistory < 1 {
 		return fmt.Errorf("DEEP_HISTORY must be greater than 0")

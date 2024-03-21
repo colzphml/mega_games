@@ -4,12 +4,13 @@ import (
 	"context"
 	"sync"
 
+	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/internal/sourceSM/discord"
 	"github.com/colzphml/mega_games/pkg/config"
 )
 
 type Sourcer interface {
-	ReadMessages(ctx context.Context, wg *sync.WaitGroup, messagesChan chan<- string)
+	ReadMessages(ctx context.Context, wg *sync.WaitGroup, messagesChan chan<- string, targetChan chan<- model.TargetMessage)
 	Close() error
 }
 

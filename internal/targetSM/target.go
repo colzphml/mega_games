@@ -4,12 +4,14 @@ import (
 	"context"
 	"sync"
 
+	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/internal/targetSM/telegram"
 	"github.com/colzphml/mega_games/pkg/config"
 )
 
 type Targeter interface {
 	ProceedFiles(ctx context.Context, wg *sync.WaitGroup)
+	ProceedSourceMessages(ctx context.Context, wg *sync.WaitGroup, targetChan <-chan model.TargetMessage)
 	Close()
 }
 
