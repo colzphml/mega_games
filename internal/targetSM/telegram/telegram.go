@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -146,8 +147,12 @@ func (c *Client) sendNewsMessage(message string) error {
 		log.Error().Err(err).Msg("failed to convert chatNewsId to int")
 		return err
 	}
+	// Экранирование специальных символов для MarkdownV2 и добавление жирного форматирования
+	//boldMessage := fmt.Sprintf("**%s**", message) // Для MarkdownV2 используйте двойное экранирование: "\\*\\*%s\\*\\*"
+	template := fmt.Sprintf("*%s*\n\n_❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nАнонсы игр указывайте реплаем к этому посту_", message)
 
-	msg := tgbotapi.NewMessage(chatNewsId, message)
+	msg := tgbotapi.NewMessage(chatNewsId, template)
+	msg.ParseMode = "Markdown"
 	if _, err := c.Bot.Send(msg); err != nil {
 		log.Error().Err(err).Msg("failed to send message")
 		return err
