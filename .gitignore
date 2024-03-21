@@ -44,3 +44,4 @@ project.xcodeproj/
 
 **/docker-compose.yml
 screens/
+MEGA_*.csv

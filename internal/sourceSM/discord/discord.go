@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/pkg/config"
+	"github.com/colzphml/mega_games/pkg/utils"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/rs/zerolog"
@@ -19,11 +21,14 @@ var log = zerolog.New(os.Stdout).With().Str("package", "discord").Timestamp().Lo
 
 type Client struct {
 	Dg          *discordgo.Session
-	Cash        []string
+	Cache       []string
+	CacheSize   int
 	ChannelId   string
 	HistoryDeep int
 	MessageChan chan<- string
 	TargeChan   chan<- model.TargetMessage
+	Schedule    model.Schedule
+	Teams       model.Teams
 }
 
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
@@ -35,9 +40,17 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 
 	dg.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsGuildMessages)
 
+	teams, err := utils.ParseCSVFileToTeams(cfg.App.PlayersPath)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to parse teams from CSV")
+		return nil, fmt.Errorf("error parsing teams from CSV: %w", err)
+	}
 	client := &Client{
+		Schedule:    utils.ParseScheduleFromCSV(cfg.App.SchedulePath),
+		Teams:       teams,
 		Dg:          dg,
-		Cash:        make([]string, 0),
+		Cache:       make([]string, 0),
+		CacheSize:   cfg.App.CacheSize,
 		ChannelId:   cfg.App.Source.ChannelID,
 		HistoryDeep: cfg.App.DeepHistory,
 	}
@@ -57,9 +70,24 @@ func (c *Client) processMessageEmbeds(message *discordgo.Message, processInitial
 	for _, embed := range message.Embeds {
 		switch {
 		case strings.Contains(embed.Title, "has advanced to"):
-			c.TargeChan <- model.TargetMessage{
-				Action: "news",
-				Value:  embed.Title,
+			switch {
+			case strings.Contains(embed.Title, "Pre Season") || strings.Contains(embed.Title, "Regular Season"):
+				if !contains(c.Cache, embed.Title) {
+					games := c.parseAdvanceMessage(embed.Title)
+					text := c.buildScheduleText(embed.Title, games)
+					if !processInitialMessages {
+						c.TargeChan <- model.TargetMessage{
+							Action: "news",
+							Value:  text,
+						}
+					}
+					c.Cache = append(c.Cache, embed.Title)
+
+					// Evict the oldest URL if the cache exceeds 50 entries
+					if len(c.Cache) > c.CacheSize {
+						c.Cache = c.Cache[1:]
+					}
+				}
 			}
 		case embed.Fields != nil:
 			for _, field := range embed.Fields {
@@ -72,21 +100,52 @@ func (c *Client) processMessageEmbeds(message *discordgo.Message, processInitial
 					}
 
 					// Check if URL is already cached
-					if !contains(c.Cash, url) {
+					if !contains(c.Cache, url) {
 						if !processInitialMessages {
 							c.MessageChan <- url
 						}
-						c.Cash = append(c.Cash, url)
+						c.Cache = append(c.Cache, url)
 
 						// Evict the oldest URL if the cache exceeds 50 entries
-						if len(c.Cash) > 50 {
-							c.Cash = c.Cash[1:]
+						if len(c.Cache) > c.CacheSize {
+							c.Cache = c.Cache[1:]
 						}
 					}
 				}
 			}
 		}
 	}
+}
+
+func (c *Client) buildScheduleText(title string, games []model.Game) string {
+	text := fmt.Sprintf("*%s*\n", title)
+	for _, game := range games {
+		home := c.Teams.Teams[game.Home]
+		away := c.Teams.Teams[game.Away]
+		gameInfo := fmt.Sprintf("\n[%s](%s) @ [%s](%s)", home.ShortName, "t.me/"+home.Player[1:], away.ShortName, "t.me/"+away.Player[1:])
+		text += gameInfo
+	}
+	return text
+}
+
+func (c *Client) parseAdvanceMessage(title string) []model.Game {
+	words := strings.Split(title, " ")
+	stage := false
+	weekNumber, err := strconv.Atoi(words[len(words)-1])
+	if err != nil {
+		log.Error().Err(err).Msg("Error parsing week number")
+		return nil
+	}
+	switch {
+	case strings.Contains(title, "Pre Season"):
+		stage = false
+	case strings.Contains(title, "Regular Season"):
+		stage = true
+	}
+	if !stage && weekNumber == 4 {
+		return nil
+	}
+	return utils.GetAllGamesForWeek(c.Schedule, stage, weekNumber)
 }
 
 // Helper function to check if the slice contains a string

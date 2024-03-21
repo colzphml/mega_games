@@ -147,9 +147,10 @@ func (c *Client) sendNewsMessage(message string) error {
 		log.Error().Err(err).Msg("failed to convert chatNewsId to int")
 		return err
 	}
-	template := fmt.Sprintf("*%s*\n\n_❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nАнонсы игр указывайте реплаем к этому посту_", message)
+	template := fmt.Sprintf("%s\n\n_❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nАнонсы игр указывайте реплаем к этому посту_", message)
 
 	msg := tgbotapi.NewMessage(chatNewsId, template)
+	msg.DisableWebPagePreview = true
 	msg.ParseMode = "Markdown"
 	if _, err := c.Bot.Send(msg); err != nil {
 		log.Error().Err(err).Msg("failed to send message")

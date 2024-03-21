@@ -42,6 +42,9 @@ type Config struct {
 		DeepHistory     int    `yaml:"deep_history" env:"DEEP_HISTORY"`           // DeepHistory is the deep of history message when application start.
 		FileStoragePath string `yaml:"file_storage_path" env:"FILE_STORAGE_PATH"` // FileStoragePath is the path to store the file.
 		GamesUrl        string `yaml:"games_url" env:"GAMES_URL"`                 // GamesUrl is the url of the games.
+		SchedulePath    string `yaml:"schedule_path" env:"SCHEDULE_PATH"`         // SchedulePath is the path to the schedule file.
+		PlayersPath     string `yaml:"players_path" env:"PLAYERS_PATH"`           // PlayersPath is the path to the players file.
+		CacheSize       int    `yaml:"cache_size" env:"CACHE_SIZE"`               // CacheSize is the size of the cache.
 	} `yaml:"app"`
 }
 
@@ -106,6 +109,12 @@ func validateConfig(c *Config) error {
 	}
 	if c.App.GamesUrl == "" {
 		return fmt.Errorf("missing GAMES_URL configuration")
+	}
+	if c.App.SchedulePath == "" {
+		return fmt.Errorf("missing SCHEDULE_PATH configuration")
+	}
+	if c.App.PlayersPath == "" {
+		return fmt.Errorf("missing PLAYERS_PATH configuration")
 	}
 	return nil
 }

@@ -99,9 +99,6 @@ func BuildApp() {
 	targetSM.Close()
 	log.Info().Msg("Target client stopped")
 
-	close(messagesChan)
-	close(targetChan)
-
 	wg.Wait() // Ensure all goroutines have finished
 	log.Info().Msg("Application stopped gracefully")
 }
