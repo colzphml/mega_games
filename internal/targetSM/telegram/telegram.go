@@ -147,8 +147,6 @@ func (c *Client) sendNewsMessage(message string) error {
 		log.Error().Err(err).Msg("failed to convert chatNewsId to int")
 		return err
 	}
-	// Экранирование специальных символов для MarkdownV2 и добавление жирного форматирования
-	//boldMessage := fmt.Sprintf("**%s**", message) // Для MarkdownV2 используйте двойное экранирование: "\\*\\*%s\\*\\*"
 	template := fmt.Sprintf("*%s*\n\n_❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nАнонсы игр указывайте реплаем к этому посту_", message)
 
 	msg := tgbotapi.NewMessage(chatNewsId, template)
