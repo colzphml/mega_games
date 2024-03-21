@@ -1,59 +1,65 @@
-# Mega games result sender
+# Mega Games Result Sender
 
-This document describes the setup and execution instructions for the automation program. This program integrates with various services including web automation through Selenium, message fetching from Discord, and sending notifications to Telegram. Ensure you have Docker installed on your system to follow the setup instructions.
+This updated document outlines the configuration and operation guidelines for the enhanced automation program. This version introduces refined settings for improved integration with web services through Selenium, Discord message handling, and Telegram notifications. Docker remains a prerequisite for installation and deployment.
 
 ## Configuration
 
-Before running the program, you must create a `config.yaml` file in the root directory of the project with the following structure:
+Before launching the program, a revised `config.yaml` file is necessary in the project's root. This file now accommodates additional parameters for enhanced functionality:
 
 ```yaml
 app:
   middle:
     type: "selenium"
-    middle_url: "http://selenium-chrome:4444/wd/hub" # URL to the Selenium Hub
+    middle_url: "http://localhost:4444/wd/hub" # Local URL for Selenium Hub
   source:
     type: "discord"
-    token: "DISCORD_BOT_TOKEN" # Your Discord bot token
-    channel_id: "DISCORD_CHANNEL_ID" # ID of the Discord channel
+    token: "DISCORD_BOT_TOKEN" # Your unique Discord bot token
+    channel_id: "DISCORD_CHANNEL_ID" # The targeted Discord channel's ID
   target:
     type: "telegram"
-    token: "TELEGRAM_BOT_TOKEN" # Your Telegram bot token
-    channel_id: "TELEGRAM_CHANNEL_ID" # ID of the Telegram channel or chat
-  deep_history: NUMBER_OF_MESSAGES # Number of past messages to process
-  file_storage_path: "PATH_TO_STORAGE" # Path to store screenshots or files
-  games_url: "URL_TO_FETCH_GAMES" # URL to fetch game information
+    token: "TELEGRAM_BOT_TOKEN" # Your unique Telegram bot token
+    common_channel_id: "TELEGRAM_COMMON_CHANNEL_ID" # Telegram common channel or chat ID
+    news_channel_id: "TELEGRAM_NEWS_CHANNEL_ID" # Telegram news channel or chat ID
+  deep_history: NUMBER_OF_MESSAGES # Number of past messages to analyze
+  file_storage_path: "PATH_TO_STORAGE" # Directory for screenshots or files
+  games_url: "URL_TO_FETCH_GAMES" # URL for game information retrieval
+  schedule_path: "PATH_TO_SCHEDULE_CSV" # Path to the game schedule CSV file
+  players_path: "PATH_TO_PLAYERS_CSV" # Path to the players CSV file
+  cache_size: CACHE_SIZE # Size of the cache for storing temporary data
 ```
 
 ### Field Descriptions:
 
-- `middle_url`: The URL where your Selenium Hub is accessible.
-- `token` (Discord and Telegram): The bot tokens for Discord and Telegram. These are necessary for the application to interact with your Discord and Telegram accounts.
-- `channel_id` (Discord and Telegram): The IDs of the channels where messages will be fetched and sent, respectively.
-- `deep_history`: The number of past messages the program will process on startup.
-- `file_storage_path`: The local path where the program will save any screenshots or files it generates.
-- `games_url`: The URL from which the program will fetch game-related information. Example: "https://neonsportz.com/leagues/MEGA/games/"
+- `middle_url`: The endpoint for accessing Selenium Hub, now defaulting to a local instance.
+- `token` (Discord and Telegram): Authentication tokens for Discord and Telegram, enabling the app to interact with specified accounts.
+- `channel_id` (Discord), `common_channel_id`, and `news_channel_id` (Telegram): Identifiers for the messaging channels where the bot will operate.
+- `deep_history`: Specifies how many historical messages the application will process initially.
+- `file_storage_path`: Designates a local storage path for saving generated content.
+- `games_url`: The source URL for game-related data.
+- `schedule_path` & `players_path`: Locations for CSV files containing game schedules and player information, respectively.
+- `cache_size`: Defines the memory allocation for temporary data storage, enhancing performance and data management.
 
 ## Running the Program
 
-Once you have configured `config.yaml` as described above, you can start the program using Docker Compose. Ensure Docker Compose is installed and run the following command from the root directory of your project:
+To initiate the program with the updated configuration, use Docker Compose from the project's root directory:
 
 ```bash
 docker compose up -d
 ```
 
-This command will start all the necessary services defined in your `docker-compose.yml` file in detached mode.
+This command activates all services outlined in your `docker-compose.yml`, operating in detached mode for seamless background execution.
 
 ## Security Note
 
-Ensure that your `config.yaml` does not get committed to any public repositories as it contains sensitive tokens. It is recommended to add `config.yaml` to your `.gitignore` file.
+Protect your `config.yaml` from exposure in public repositories to safeguard sensitive information. Incorporate `config.yaml` into your `.gitignore` to avoid accidental commits.
 
 ## Troubleshooting
 
-If you encounter any issues while running the program, ensure that:
+Should any operational issues arise, verify the following:
 
-- Docker is running on your system.
-- The `config.yaml` file is correctly placed in the root directory.
-- The tokens and IDs provided in `config.yaml` are valid and have the necessary permissions.
-- The file storage path specified in `config.yaml` is accessible and writable by the Selenium user. If Selenium is unable to write to this path, you may encounter errors related to file handling or screenshot saving.
+- Docker's active status on your system.
+- Correct placement and formatting of the `config.yaml` in the project's root.
+- Accuracy and permission settings of all tokens and IDs in `config.yaml`.
+- Accessibility and permission settings of the specified file storage path, particularly for Selenium's operational requirements.
 
-For further assistance, consider checking the application logs or consulting the documentation of the individual services (Selenium, Discord, Telegram) for more detailed troubleshooting steps.
+For additional support, consult the application logs or reference the individual service documentations (Selenium, Discord, Telegram) for comprehensive troubleshooting guidance.
