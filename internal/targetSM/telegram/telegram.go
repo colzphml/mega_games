@@ -85,7 +85,6 @@ func (c *Client) processFiles() {
 			err := c.sendImage(file.Name())
 			if err != nil {
 				log.Error().Err(err).Str("file", file.Name()).Msg("error sending image")
-				continue
 			}
 			log.Info().Str("file", file.Name()).Str("file", file.Name()).Msg("proceeding with file")
 			// After processing, remove the file
