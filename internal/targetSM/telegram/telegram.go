@@ -1,14 +1,12 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/pkg/config"
@@ -19,8 +17,8 @@ import (
 
 var log = zerolog.New(os.Stdout).With().Str("package", "telegram").Timestamp().Logger()
 
-const fileExtension = ".jpeg"
-const processedFilePrefix = "game-recap"
+// const fileExtension = ".jpeg"
+// const processedFilePrefix = "game-recap"
 
 type Client struct {
 	Bot          *tgbotapi.BotAPI
@@ -28,9 +26,10 @@ type Client struct {
 	ChatNewsId   string
 	Directory    string
 	UrlPart      string
+	TargetChan   <-chan model.TargetMessage
 }
 
-func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
+func NewClient(ctx context.Context, cfg *config.Config, targetChan <-chan model.TargetMessage) (*Client, error) {
 	bot, err := tgbotapi.NewBotAPI(cfg.App.Target.Token)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to create Telegram bot")
@@ -46,77 +45,77 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 		ChatNewsId:   cfg.App.Target.NewsChannelID,
 		Directory:    cfg.App.FileStoragePath,
 		UrlPart:      cfg.App.GamesUrl,
+		TargetChan:   targetChan,
 	}, nil
 }
 
 func (c *Client) Close() {
 	log.Info().Msg("closing telegram client")
-	//close bot connection
 	c.Bot.StopReceivingUpdates()
 }
 
-func (c *Client) deleteExistingJPEGs() {
-	files, err := os.ReadDir(c.Directory)
-	if err != nil {
-		log.Error().Err(err).Msg("error reading directory")
-		return
-	}
+// func (c *Client) deleteExistingJPEGs() {
+// 	files, err := os.ReadDir(c.Directory)
+// 	if err != nil {
+// 		log.Error().Err(err).Msg("error reading directory")
+// 		return
+// 	}
 
-	for _, file := range files {
-		if filepath.Ext(file.Name()) == fileExtension {
-			if err := os.Remove(filepath.Join(c.Directory, file.Name())); err != nil {
-				log.Error().Err(err).Str("file", file.Name()).Msg("error deleting file")
-			} else {
-				log.Info().Str("file", file.Name()).Msg("deleted")
-			}
-		}
-	}
-}
+// 	for _, file := range files {
+// 		if filepath.Ext(file.Name()) == fileExtension {
+// 			if err := os.Remove(filepath.Join(c.Directory, file.Name())); err != nil {
+// 				log.Error().Err(err).Str("file", file.Name()).Msg("error deleting file")
+// 			} else {
+// 				log.Info().Str("file", file.Name()).Msg("deleted")
+// 			}
+// 		}
+// 	}
+// }
 
-func (c *Client) processFiles() {
-	files, err := os.ReadDir(c.Directory)
-	if err != nil {
-		log.Error().Err(err).Msg("error reading directory")
-		return
-	}
+// func (c *Client) processFiles() {
+// 	files, err := os.ReadDir(c.Directory)
+// 	if err != nil {
+// 		log.Error().Err(err).Msg("error reading directory")
+// 		return
+// 	}
 
-	for _, file := range files {
-		if filepath.Ext(file.Name()) == fileExtension && !strings.Contains(file.Name(), processedFilePrefix) {
-			err := c.sendImage(file.Name())
-			if err != nil {
-				log.Error().Err(err).Str("file", file.Name()).Msg("error sending image")
-			}
-			log.Info().Str("file", file.Name()).Str("file", file.Name()).Msg("proceeding with file")
-			// After processing, remove the file
-			if err := os.Remove(filepath.Join(c.Directory, file.Name())); err != nil {
-				log.Error().Err(err).Str("file", file.Name()).Msg("error deleting file")
-			}
-		} else {
-			continue
-		}
-	}
-}
+// 	for _, file := range files {
+// 		if filepath.Ext(file.Name()) == fileExtension && !strings.Contains(file.Name(), processedFilePrefix) {
+// 			err := c.sendImage(file.Name())
+// 			if err != nil {
+// 				log.Error().Err(err).Str("file", file.Name()).Msg("error sending image")
+// 			}
+// 			log.Info().Str("file", file.Name()).Str("file", file.Name()).Msg("proceeding with file")
+// 			// After processing, remove the file
+// 			if err := os.Remove(filepath.Join(c.Directory, file.Name())); err != nil {
+// 				log.Error().Err(err).Str("file", file.Name()).Msg("error deleting file")
+// 			}
+// 		} else {
+// 			continue
+// 		}
+// 	}
+// }
 
-func (c *Client) ProceedFiles(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
+// func (c *Client) ProceedFiles(ctx context.Context, wg *sync.WaitGroup) {
+// 	defer wg.Done()
 
-	c.deleteExistingJPEGs()
+// 	c.deleteExistingJPEGs()
 
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+// 	ticker := time.NewTicker(100 * time.Millisecond)
+// 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ctx.Done():
-			log.Info().Msg("context done, stopping file processing")
-			return
-		case <-ticker.C:
-			c.processFiles()
-		}
-	}
-}
+// 	for {
+// 		select {
+// 		case <-ctx.Done():
+// 			log.Info().Msg("context done, stopping file processing")
+// 			return
+// 		case <-ticker.C:
+// 			c.processFiles()
+// 		}
+// 	}
+// }
 
-func (c *Client) ProceedSourceMessages(ctx context.Context, wg *sync.WaitGroup, targetChan <-chan model.TargetMessage) {
+func (c *Client) ProceedSourceMessages(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for {
@@ -124,12 +123,17 @@ func (c *Client) ProceedSourceMessages(ctx context.Context, wg *sync.WaitGroup, 
 		case <-ctx.Done():
 			log.Info().Msg("context done, stopping source messages processing")
 			return
-		case message := <-targetChan:
+		case message := <-c.TargetChan:
 			switch message.Action {
 			case "news":
 				err := c.sendNewsMessage(message.Value)
 				if err != nil {
 					log.Error().Err(err).Msg("failed to send news message")
+				}
+			case "game":
+				err := c.sendImage(message)
+				if err != nil {
+					log.Error().Err(err).Msg("failed to send image")
 				}
 			case "schedule":
 				log.Info().Msg("schedule message received" + message.Value)
@@ -160,24 +164,26 @@ func (c *Client) sendNewsMessage(message string) error {
 	return nil
 }
 
-func (c *Client) sendImage(fileName string) error {
+func (c *Client) sendImage(message model.TargetMessage) error {
 	chatCommonId, err := strconv.ParseInt(c.ChatCommonId, 10, 64)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to convert chatCommonId to int")
 		return err
 	}
 
-	filePath := filepath.Join(c.Directory, fileName)
-	msg := tgbotapi.NewPhotoUpload(chatCommonId, filePath)
-	gameNumber := strings.TrimSuffix(fileName, fileExtension)
-	fullURL := c.UrlPart + gameNumber
-	msg.Caption = fullURL
+	byteReader := bytes.NewReader(message.Image)
+	photo := tgbotapi.NewPhotoUpload(chatCommonId, tgbotapi.FileReader{
+		Name:   "game-recap.jpeg",
+		Reader: byteReader,
+		Size:   int64(len(message.Image)),
+	})
+	photo.Caption = message.Value
 
-	if _, err := c.Bot.Send(msg); err != nil {
+	if _, err := c.Bot.Send(photo); err != nil {
 		log.Error().Err(err).Msg("failed to send image")
 		return err
 	} else {
-		log.Debug().Str("file", fileName).Msg("image sent")
+		log.Debug().Str("url", message.Value).Msg("image sent")
 	}
 	return nil
 }

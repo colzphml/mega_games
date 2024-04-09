@@ -10,14 +10,15 @@ import (
 )
 
 type Sourcer interface {
-	ReadMessages(ctx context.Context, wg *sync.WaitGroup, messagesChan chan<- string, targetChan chan<- model.TargetMessage)
+	HandleMessages(ctx context.Context, wg *sync.WaitGroup)
+	ProceedMessages(ctx context.Context, wg *sync.WaitGroup)
 	Close() error
 }
 
-func NewSource(ctx context.Context, cfg *config.Config) (Sourcer, error) {
+func NewSource(ctx context.Context, cfg *config.Config, messageChan chan<- model.DiscordGame, targetChan chan<- model.TargetMessage) (Sourcer, error) {
 	switch cfg.App.Source.Type {
 	case "discord":
-		return discord.NewClient(ctx, cfg)
+		return discord.NewClient(ctx, cfg, messageChan, targetChan)
 	default:
 		return nil, &ErrUnsupportedSourceType{SourceType: cfg.App.Source.Type}
 	}

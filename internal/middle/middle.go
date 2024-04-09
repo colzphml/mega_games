@@ -5,18 +5,19 @@ import (
 	"sync"
 
 	"github.com/colzphml/mega_games/internal/middle/selenium"
+	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/pkg/config"
 )
 
 type Middler interface {
-	ReadMessages(ctx context.Context, wg *sync.WaitGroup, messagesChan <-chan string)
+	ReadMessages(ctx context.Context, wg *sync.WaitGroup)
 	Close() error
 }
 
-func NewMiddler(ctx context.Context, cfg *config.Config) (Middler, error) {
+func NewMiddler(ctx context.Context, cfg *config.Config, messageChan <-chan model.DiscordGame, targetChan chan<- model.TargetMessage) (Middler, error) {
 	switch cfg.App.Middle.Type {
 	case "selenium":
-		return selenium.NewClient(ctx, cfg)
+		return selenium.NewClient(ctx, cfg, messageChan, targetChan)
 	default:
 		return nil, &ErrUnsupportedMiddleType{SourceType: cfg.App.Middle.Type}
 	}

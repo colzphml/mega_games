@@ -10,15 +10,15 @@ import (
 )
 
 type Targeter interface {
-	ProceedFiles(ctx context.Context, wg *sync.WaitGroup)
-	ProceedSourceMessages(ctx context.Context, wg *sync.WaitGroup, targetChan <-chan model.TargetMessage)
+	//ProceedFiles(ctx context.Context, wg *sync.WaitGroup)
+	ProceedSourceMessages(ctx context.Context, wg *sync.WaitGroup)
 	Close()
 }
 
-func NewSource(ctx context.Context, cfg *config.Config) (Targeter, error) {
+func NewSource(ctx context.Context, cfg *config.Config, targetChan <-chan model.TargetMessage) (Targeter, error) {
 	switch cfg.App.Target.Type {
 	case "telegram":
-		return telegram.NewClient(ctx, cfg)
+		return telegram.NewClient(ctx, cfg, targetChan)
 	default:
 		return nil, &ErrUnsupportedTargetType{TargetType: cfg.App.Source.Type}
 	}

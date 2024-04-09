@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/pkg/config"
 	"github.com/rs/zerolog"
 	"github.com/tebeka/selenium"
@@ -19,12 +20,16 @@ var log = zerolog.New(os.Stdout).With().Str("package", "selenium").Timestamp().L
 type Client struct {
 	MiddleUrl       string
 	FileStoragePath string
+	MessageChan     <-chan model.DiscordGame
+	TargetChan      chan<- model.TargetMessage
 }
 
-func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
+func NewClient(ctx context.Context, cfg *config.Config, messageChan <-chan model.DiscordGame, targetChan chan<- model.TargetMessage) (*Client, error) {
 	return &Client{
 		MiddleUrl:       cfg.App.Middle.MiddleUrl,
 		FileStoragePath: cfg.App.FileStoragePath,
+		MessageChan:     messageChan,
+		TargetChan:      targetChan,
 	}, nil
 }
 
@@ -33,16 +38,16 @@ func (c *Client) Close() error {
 	return nil
 }
 
-func (c *Client) ReadMessages(ctx context.Context, wg *sync.WaitGroup, messagesChan <-chan string) {
+func (c *Client) ReadMessages(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		select {
 		case <-ctx.Done():
 			log.Info().Msg("context done, closing selenium client")
 			return
-		case message := <-messagesChan:
-			if err := c.proceedUrl(ctx, message); err != nil {
-				log.Error().Err(err).Str("url", message).Msg("error proceeding URL")
+		case message := <-c.MessageChan:
+			if err := c.proceedUrl(ctx, message.GameUrl); err != nil {
+				log.Error().Err(err).Str("url", message.GameUrl).Msg("error proceeding URL")
 			}
 		}
 	}
@@ -66,7 +71,23 @@ func (c *Client) proceedUrl(ctx context.Context, url string) error {
 		return fmt.Errorf("error interacting with page: %w", err)
 	}
 	gamenumber := extractGameNumber(url)
-	return waitForFileAndRename(ctx, c.FileStoragePath, "game-recap.jpeg", gamenumber+".jpeg")
+
+	newPath, err := waitForFileAndRename(ctx, c.FileStoragePath, "game-recap.jpeg", gamenumber+".jpeg")
+	if err != nil {
+		return fmt.Errorf("error waiting for file and renaming: %w", err)
+	}
+
+	image, err := os.ReadFile(newPath)
+	if err != nil {
+		return fmt.Errorf("error reading file: %w", err)
+	}
+	c.TargetChan <- model.TargetMessage{
+		Action: "game",
+		Value:  url,
+		Image:  image,
+	}
+
+	return os.Remove(newPath)
 }
 
 func interactWithPage(wd selenium.WebDriver) error {
@@ -94,7 +115,7 @@ func interactWithPage(wd selenium.WebDriver) error {
 	return nil
 }
 
-func waitForFileAndRename(ctx context.Context, targetDir, oldFileName, newFileName string) error {
+func waitForFileAndRename(ctx context.Context, targetDir, oldFileName, newFileName string) (string, error) {
 	targetPath := filepath.Join(targetDir, oldFileName)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -102,13 +123,13 @@ func waitForFileAndRename(ctx context.Context, targetDir, oldFileName, newFileNa
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return "", ctx.Err()
 		case <-ticker.C:
 			if _, err := os.Stat(targetPath); err == nil {
 				newPath := filepath.Join(targetDir, newFileName)
-				return os.Rename(targetPath, newPath)
+				return newPath, os.Rename(targetPath, newPath)
 			} else if !os.IsNotExist(err) {
-				return fmt.Errorf("error while waiting for file: %v", err)
+				return "", fmt.Errorf("error while waiting for file: %v", err)
 			}
 		}
 	}

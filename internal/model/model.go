@@ -3,38 +3,20 @@ package model
 type TargetMessage struct {
 	Action string
 	Value  string
+	Image  []byte
 }
 
-type Season struct {
-	Index int
-	Weeks []Week
+type DiscordMessage struct {
+	MessageId   string
+	Proceed     bool
+	NewWeek     bool
+	NewWeekText string
+	Games       []DiscordGame
 }
 
-type Week struct {
-	Index int
-	Stage bool
-	Games []Game
-}
-
-type Game struct {
-	Season int
-	Week   int
-	Stage  bool
-	Home   string
-	Away   string
-}
-
-type Schedule struct {
-	Season []Season
-}
-
-type Team struct {
-	Name      string
-	ShortName string
-	Emoji     string
-	Player    string
-}
-
-type Teams struct {
-	Teams map[string]Team
+type DiscordGame struct {
+	MessageId  string
+	Proceed    bool
+	GameNumber string
+	GameUrl    string
 }
