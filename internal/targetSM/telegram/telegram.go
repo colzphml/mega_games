@@ -10,25 +10,24 @@ import (
 
 	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/pkg/config"
-	"github.com/rs/zerolog"
-
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	"github.com/rs/zerolog"
 )
 
+// log is the package-wide logger initialized to write to stdout with the package name as a contextual tag.
 var log = zerolog.New(os.Stdout).With().Str("package", "telegram").Timestamp().Logger()
 
-// const fileExtension = ".jpeg"
-// const processedFilePrefix = "game-recap"
-
+// Client represents a client for sending messages to Telegram.
 type Client struct {
-	Bot          *tgbotapi.BotAPI
-	ChatCommonId string
-	ChatNewsId   string
-	Directory    string
-	UrlPart      string
-	TargetChan   <-chan model.TargetMessage
+	Bot          *tgbotapi.BotAPI           // Bot instance for sending messages.
+	ChatCommonId string                     // ID of the common chat to which messages are sent.
+	ChatNewsId   string                     // ID of the news chat for announcements.
+	Directory    string                     // Directory for storing files, not used currently.
+	UrlPart      string                     // Part of the URL for constructing message contents, not used currently.
+	TargetChan   <-chan model.TargetMessage // Channel for receiving messages to be sent.
 }
 
+// NewClient creates and initializes a new Telegram client with the provided configuration and message channel.
 func NewClient(ctx context.Context, cfg *config.Config, targetChan <-chan model.TargetMessage) (*Client, error) {
 	bot, err := tgbotapi.NewBotAPI(cfg.App.Target.Token)
 	if err != nil {
@@ -37,8 +36,8 @@ func NewClient(ctx context.Context, cfg *config.Config, targetChan <-chan model.
 	}
 
 	bot.Debug = true
+	log.Info().Msgf("authorized on account %s", bot.Self.UserName)
 
-	log.Printf("Authorized on account %s", bot.Self.UserName)
 	return &Client{
 		Bot:          bot,
 		ChatCommonId: cfg.App.Target.CommonChannelID,
@@ -49,72 +48,13 @@ func NewClient(ctx context.Context, cfg *config.Config, targetChan <-chan model.
 	}, nil
 }
 
+// Close stops the Telegram bot's update receiving process.
 func (c *Client) Close() {
 	log.Info().Msg("closing telegram client")
 	c.Bot.StopReceivingUpdates()
 }
 
-// func (c *Client) deleteExistingJPEGs() {
-// 	files, err := os.ReadDir(c.Directory)
-// 	if err != nil {
-// 		log.Error().Err(err).Msg("error reading directory")
-// 		return
-// 	}
-
-// 	for _, file := range files {
-// 		if filepath.Ext(file.Name()) == fileExtension {
-// 			if err := os.Remove(filepath.Join(c.Directory, file.Name())); err != nil {
-// 				log.Error().Err(err).Str("file", file.Name()).Msg("error deleting file")
-// 			} else {
-// 				log.Info().Str("file", file.Name()).Msg("deleted")
-// 			}
-// 		}
-// 	}
-// }
-
-// func (c *Client) processFiles() {
-// 	files, err := os.ReadDir(c.Directory)
-// 	if err != nil {
-// 		log.Error().Err(err).Msg("error reading directory")
-// 		return
-// 	}
-
-// 	for _, file := range files {
-// 		if filepath.Ext(file.Name()) == fileExtension && !strings.Contains(file.Name(), processedFilePrefix) {
-// 			err := c.sendImage(file.Name())
-// 			if err != nil {
-// 				log.Error().Err(err).Str("file", file.Name()).Msg("error sending image")
-// 			}
-// 			log.Info().Str("file", file.Name()).Str("file", file.Name()).Msg("proceeding with file")
-// 			// After processing, remove the file
-// 			if err := os.Remove(filepath.Join(c.Directory, file.Name())); err != nil {
-// 				log.Error().Err(err).Str("file", file.Name()).Msg("error deleting file")
-// 			}
-// 		} else {
-// 			continue
-// 		}
-// 	}
-// }
-
-// func (c *Client) ProceedFiles(ctx context.Context, wg *sync.WaitGroup) {
-// 	defer wg.Done()
-
-// 	c.deleteExistingJPEGs()
-
-// 	ticker := time.NewTicker(100 * time.Millisecond)
-// 	defer ticker.Stop()
-
-// 	for {
-// 		select {
-// 		case <-ctx.Done():
-// 			log.Info().Msg("context done, stopping file processing")
-// 			return
-// 		case <-ticker.C:
-// 			c.processFiles()
-// 		}
-// 	}
-// }
-
+// ProceedSourceMessages listens for messages from the TargetChan and processes them according to their type.
 func (c *Client) ProceedSourceMessages(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -125,45 +65,45 @@ func (c *Client) ProceedSourceMessages(ctx context.Context, wg *sync.WaitGroup) 
 			return
 		case message := <-c.TargetChan:
 			switch message.Action {
-			case "news":
-				err := c.sendNewsMessage(message.Value)
-				if err != nil {
+			case "newWeek":
+				if err := c.sendNewsMessage(message.Value); err != nil {
 					log.Error().Err(err).Msg("failed to send news message")
 				}
 			case "game":
-				err := c.sendImage(message)
-				if err != nil {
+				if err := c.sendImage(message); err != nil {
 					log.Error().Err(err).Msg("failed to send image")
 				}
 			case "schedule":
-				log.Info().Msg("schedule message received" + message.Value)
+				log.Info().Msgf("schedule message received: %s", message.Value)
 			default:
-				log.Error().Msg("unknown message type")
+				log.Error().Msg("unknown message type received")
 			}
 		}
 	}
 }
 
+// sendNewsMessage sends a news message to the news chat.
 func (c *Client) sendNewsMessage(message string) error {
 	chatNewsId, err := strconv.ParseInt(c.ChatNewsId, 10, 64)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to convert chatNewsId to int")
 		return err
 	}
-	template := fmt.Sprintf("%s\n\n_❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nАнонсы игр указывайте реплаем к этому посту_", message)
+	template := fmt.Sprintf("%s\n\n_❗️Please arrange your match now to avoid delays._\n\nAnnounce games as a reply to this post.", message)
 
 	msg := tgbotapi.NewMessage(chatNewsId, template)
 	msg.DisableWebPagePreview = true
 	msg.ParseMode = "Markdown"
 	if _, err := c.Bot.Send(msg); err != nil {
-		log.Error().Err(err).Msg("failed to send message")
+		log.Error().Err(err).Msg("failed to send news message")
 		return err
-	} else {
-		log.Info().Str("message", message).Msg("message sent")
 	}
+
+	log.Info().Str("message", message).Msg("news message sent")
 	return nil
 }
 
+// sendImage sends an image message to the common chat.
 func (c *Client) sendImage(message model.TargetMessage) error {
 	chatCommonId, err := strconv.ParseInt(c.ChatCommonId, 10, 64)
 	if err != nil {
@@ -182,8 +122,8 @@ func (c *Client) sendImage(message model.TargetMessage) error {
 	if _, err := c.Bot.Send(photo); err != nil {
 		log.Error().Err(err).Msg("failed to send image")
 		return err
-	} else {
-		log.Debug().Str("url", message.Value).Msg("image sent")
 	}
+
+	log.Debug().Str("url", message.Value).Msg("image sent")
 	return nil
 }
