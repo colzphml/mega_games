@@ -89,7 +89,7 @@ func (c *Client) sendNewsMessage(message string) error {
 		log.Error().Err(err).Msg("failed to convert chatNewsId to int")
 		return err
 	}
-	template := fmt.Sprintf("%s\n\n_❗️Please arrange your match now to avoid delays._\n\nAnnounce games as a reply to this post.", message)
+	template := fmt.Sprintf("%s\n\n_❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nАнонсы игр указывайте реплаем к этому посту_", message)
 
 	msg := tgbotapi.NewMessage(chatNewsId, template)
 	msg.DisableWebPagePreview = true
