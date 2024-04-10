@@ -72,6 +72,7 @@ func (c *Client) HandleMessages(ctx context.Context, wg *sync.WaitGroup) {
 			MessageId: m.ID,
 			Proceed:   false,
 		}
+		time.Sleep(5 * time.Second)
 		c.InternalChan <- msg
 	}
 
