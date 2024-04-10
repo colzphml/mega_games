@@ -113,7 +113,7 @@ func interactWithPage(wd selenium.WebDriver) error {
 		return err
 	}
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
 	// Find and click the DOWNLOAD button using XPath to locate by class and text
 	downloadBtn, err := wd.FindElement(selenium.ByXPATH, "//div[@id='q-app']/div/div/div/div[2]/main/div[2]/div[4]/div/div/div/div[4]/button/span[2]/i")
 	if err != nil {
