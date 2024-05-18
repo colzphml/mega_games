@@ -213,7 +213,17 @@ func (c *Client) buildScheduleText(title string, games []model.Game) string {
 	for _, game := range games {
 		home := c.Teams.Teams[game.Home]
 		away := c.Teams.Teams[game.Away]
-		gameInfo := fmt.Sprintf("\n[%s](%s) @ [%s](%s)", away.ShortName, "t.me/"+away.Player[1:], home.ShortName, "t.me/"+home.Player[1:])
+		var gameInfo string
+		if away.Player == "CPU" && home.Player == "CPU" {
+			gameInfo = fmt.Sprintf("\n%s(CPU) @ %s(CPU)", away.ShortName, home.ShortName)
+		} else if away.Player == "CPU" {
+			gameInfo = fmt.Sprintf("\n%s(CPU) @ [%s](%s)", away.ShortName, home.ShortName, "t.me/"+home.Player[1:])
+		} else if home.Player == "CPU" {
+			gameInfo = fmt.Sprintf("\n[%s](%s) @ %s(CPU)", away.ShortName, "t.me/"+away.Player[1:], home.ShortName)
+		} else {
+			gameInfo = fmt.Sprintf("\n[%s](%s) @ [%s](%s)", away.ShortName, "t.me/"+away.Player[1:], home.ShortName, "t.me/"+home.Player[1:])
+		}
+
 		textBuilder.WriteString(gameInfo)
 	}
 
