@@ -50,7 +50,7 @@ func NewClient(ctx context.Context, cfg *config.Config, messageChan chan<- model
 		log.Error().Err(err).Msg("failed to parse teams from CSV")
 		return nil, fmt.Errorf("error parsing teams from CSV: %w", err)
 	}
-
+	test := utils.ParseScheduleFromCSV(cfg.App.SchedulePath)
 	return &Client{
 		Schedule:     utils.ParseScheduleFromCSV(cfg.App.SchedulePath),
 		Teams:        teams,
