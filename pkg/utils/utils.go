@@ -23,10 +23,8 @@ func ParseScheduleFromCSV(filePath string) model.Schedule {
 	if err != nil {
 		log.Fatalf("Unable to read the header row: %v", err)
 	}
-
 	schedule := model.Schedule{}
 	seasonMap := make(map[int]int)
-	weekMap := make(map[int]map[int]int) // seasonIndex to (weekIndex to slice index)
 
 	for {
 		record, err := csvReader.Read()
@@ -54,20 +52,24 @@ func ParseScheduleFromCSV(filePath string) model.Schedule {
 			newSeason := model.Season{Index: seasonIndex}
 			schedule.Season = append(schedule.Season, newSeason)
 			seasonMap[seasonIndex] = len(schedule.Season) - 1
-			weekMap[seasonIndex] = make(map[int]int)
 		}
 		seasonIdx := seasonMap[seasonIndex]
 
-		if weekIdx, exists := weekMap[seasonIndex][weekIndex]; exists {
-			schedule.Season[seasonIdx].Weeks[weekIdx].Games = append(schedule.Season[seasonIdx].Weeks[weekIdx].Games, game)
-		} else {
+		var weekExistFlag bool
+		for weekIdx, week := range schedule.Season[seasonIdx].Weeks {
+			if week.Index == weekIndex && week.Stage == stage {
+				schedule.Season[seasonIdx].Weeks[weekIdx].Games = append(schedule.Season[seasonIdx].Weeks[weekIdx].Games, game)
+				weekExistFlag = true
+				break
+			}
+		}
+		if !weekExistFlag {
 			newWeek := model.Week{
 				Index: weekIndex,
 				Stage: stage,
 				Games: []model.Game{game},
 			}
 			schedule.Season[seasonIdx].Weeks = append(schedule.Season[seasonIdx].Weeks, newWeek)
-			weekMap[seasonIndex][weekIndex] = len(schedule.Season[seasonIdx].Weeks) - 1
 		}
 	}
 
