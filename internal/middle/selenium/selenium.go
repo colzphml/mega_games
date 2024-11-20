@@ -100,28 +100,42 @@ func (c *Client) proceedUrl(ctx context.Context, url string) error {
 	return os.Remove(newPath)
 }
 
-// interactWithPage interacts with the web page, such as clicking buttons.
+// interactWithPage взаимодействует с веб-страницей, например, нажимает кнопки.
 func interactWithPage(wd selenium.WebDriver) error {
-	// Find and click the RECAP button using XPath to locate by text
+	// Попытка найти и нажать кнопку принятия куки, если она существует
+	consentBtn, err := wd.FindElement(selenium.ByXPATH, "//p[@class='fc-button-label' and text()='Consent']")
+	if err == nil {
+		if err := consentBtn.Click(); err != nil {
+			log.Error().Err(err).Msg("Ошибка при нажатии кнопки Consent")
+			return err
+		}
+		// Ожидание, чтобы убедиться, что окно куки исчезло
+		time.Sleep(2 * time.Second)
+	} else {
+		log.Info().Msg("Кнопка принятия куки не найдена, возможно, она уже была принята ранее")
+	}
+
+	// Поиск и нажатие кнопки RECAP
 	recapBtn, err := wd.FindElement(selenium.ByXPATH, "//div[@id='q-app']/div/div/div/div[2]/main/div[2]/div[3]/div/div[3]/div[2]/div")
 	if err != nil {
-		log.Error().Err(err).Msg("error finding RECAP button")
+		log.Error().Err(err).Msg("Ошибка при поиске кнопки RECAP")
 		return err
 	}
 	if err := recapBtn.Click(); err != nil {
-		log.Error().Err(err).Msg("error clicking RECAP button")
+		log.Error().Err(err).Msg("Ошибка при нажатии кнопки RECAP")
 		return err
 	}
 
 	time.Sleep(3 * time.Second)
-	// Find and click the DOWNLOAD button using XPath to locate by class and text
+
+	// Поиск и нажатие кнопки DOWNLOAD
 	downloadBtn, err := wd.FindElement(selenium.ByXPATH, "//div[@id='q-app']/div/div/div/div[2]/main/div[2]/div[4]/div/div/div/div[4]/button/span[2]/i")
 	if err != nil {
-		log.Error().Err(err).Msg("error finding DOWNLOAD button")
+		log.Error().Err(err).Msg("Ошибка при поиске кнопки DOWNLOAD")
 		return err
 	}
 	if err := downloadBtn.Click(); err != nil {
-		log.Error().Err(err).Msg("error clicking DOWNLOAD button")
+		log.Error().Err(err).Msg("Ошибка при нажатии кнопки DOWNLOAD")
 		return err
 	}
 	return nil

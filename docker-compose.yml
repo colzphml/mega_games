@@ -1,9 +1,7 @@
-# version: '3.3'
-
 services:
   selenium-chrome:
-    image: seleniarm/standalone-chromium:latest
-    # image: selenium/standalone-chrome:latest
+    #image: seleniarm/standalone-chromium:latest
+    image: selenium/standalone-chrome:latest
     volumes:
       - ./screens/:/home/seluser/Downloads/
     ports:
