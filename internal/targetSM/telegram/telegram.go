@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/pkg/config"
@@ -89,7 +90,15 @@ func (c *Client) sendNewsMessage(message string) error {
 		log.Error().Err(err).Msg("failed to convert chatNewsId to int")
 		return err
 	}
-	template := fmt.Sprintf("%s\n\n_❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nАнонсы игр указывайте реплаем к этому посту_", message)
+
+	moscowLoc, err := time.LoadLocation("Europe/Moscow")
+	if err != nil {
+		log.Error().Err(err).Msg("failed to load Moscow timezone")
+		return err
+	}
+	deadline := time.Now().In(moscowLoc).Add(time.Hour * 40).Format("02 Jan 2006 15:04")
+
+	template := fmt.Sprintf("%s\n\n_❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nДо %s просьба указать анонс матча реплаем к этому посту_", message, deadline)
 
 	msg := tgbotapi.NewMessage(chatNewsId, template)
 	msg.DisableWebPagePreview = true
