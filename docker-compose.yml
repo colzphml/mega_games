@@ -4,10 +4,9 @@ services:
     image: selenium/standalone-chrome:latest
     volumes:
       - ./screens/:/home/seluser/Downloads/
-    ports:
-      - "4444:4444"
-      - "7900:7900"
     shm_size: 2gb
+    networks:
+      - megagames-net
 
   myapp: # Define your application service
     build: 
@@ -25,3 +24,9 @@ services:
       TZ: Europe/Moscow
     depends_on:
       - selenium-chrome # Optional: if your app needs to wait for Selenium service to be up
+    networks:
+      - megagames-net
+
+networks:
+  megagames-net:
+    driver: bridge
