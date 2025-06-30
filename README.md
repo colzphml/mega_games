@@ -34,7 +34,6 @@ app:
     token: "TELEGRAM_BOT_TOKEN"                   # Telegram bot token
     common_channel_id: "TELEGRAM_COMMON_CHANNEL_ID" # Common Telegram channel/chat ID
     news_channel_id: "TELEGRAM_NEWS_CHANNEL_ID"     # News Telegram channel/chat ID
-  deep_history: 50                                 # Number of past messages to analyze
   file_storage_path: "./screens"                  # Where screenshots/files are saved
   games_url: "https://example.com/games"          # URL to fetch game information
   schedule_path: "./MEGA_games.csv"               # Path to game schedule CSV
@@ -53,8 +52,7 @@ app:
 - **Selenium Section:**
   - `middle_url`: URL of the Selenium Hub (default: local container)
 - **Other Fields:**
-  - `deep_history`: How many previous messages to process on startup
-  - `file_storage_path`: Local directory for screenshots/files
+    - `file_storage_path`: Local directory for screenshots/files
   - `games_url`: Source of game information
   - `schedule_path` & `players_path`: CSV files for schedules and players
   - `cache_size`: In-memory cache size for performance
