@@ -102,42 +102,72 @@ func (c *Client) proceedUrl(ctx context.Context, url string) error {
 
 // interactWithPage взаимодействует с веб-страницей, например, нажимает кнопки.
 func interactWithPage(wd selenium.WebDriver) error {
-	// Попытка найти и нажать кнопку принятия cookies, если она есть
+	log.Info().Msg("Начинаем взаимодействие со страницей")
+
+	// 1. Попытаться найти и нажать кнопку принятия cookies (ищем любой button с текстом 'Consent')
 	if consentBtns, _ := wd.FindElements(selenium.ByXPATH, "//button[contains(., 'Consent')]"); len(consentBtns) > 0 {
-		if err := consentBtns[0].Click(); err == nil {
-			time.Sleep(2 * time.Second)
+		log.Info().Msg("Нашли кнопку Consent, нажимаем")
+		if err := consentBtns[0].Click(); err != nil {
+			log.Error().Err(err).Msg("Ошибка при нажатии на кнопку Consent")
+		} else {
+			// Ждать не нужно фиксированное время, можно просто подождать один кадр JS
+			time.Sleep(500 * time.Millisecond)
 		}
+	} else {
+		log.Info().Msg("Кнопка Consent не найдена, возможно, cookies уже приняты")
 	}
 
-	// Переход на вкладку Recap (поиск по тексту)
-	recapTab, err := wd.FindElement(selenium.ByXPATH, "//div[contains(@class,'q-tab')][.//div[@class='q-tab__label' and normalize-space()='Recap']]")
+	// 2. Нажимаем вкладку Recap (поиск по тексту метки)
+	recapXPath := "//div[contains(@class,'q-tab')][.//div[@class='q-tab__label' and normalize-space()='Recap']]"
+	recapTab, err := wd.FindElement(selenium.ByXPATH, recapXPath)
 	if err != nil {
+		log.Error().Err(err).Msg("Не удалось найти вкладку Recap")
 		return fmt.Errorf("вкладка Recap не найдена: %w", err)
 	}
 	if err := recapTab.Click(); err != nil {
+		log.Error().Err(err).Msg("Ошибка при клике по вкладке Recap")
 		return fmt.Errorf("ошибка при клике по вкладке Recap: %w", err)
 	}
+	log.Info().Msg("Вкладка Recap успешно выбрана")
 
-	// Ожидаем появления кнопки DOWNLOAD (кнопка отрисовывается после спиннера)
+	// 3. Ждём появления кнопки DOWNLOAD без фиксированного ожидания.
+	xpaths := []string{
+		"//span[normalize-space()='DOWNLOAD']/ancestor::button[1]",                                                                                 // span внутри button
+		"//button[.//span[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'download')]]",                        // button c текстом download
+		"//*[@role='button'][contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'download')]",                      // любой элемент с role=button
+		"//div[contains(@class,'q-btn')][.//span[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'download')]]", // div с классом q-btn
+	}
 	var downloadBtn selenium.WebElement
-	for i := 0; i < 20; i++ { // ждём до 10 секунд, проверяя каждые 500 мс
-		time.Sleep(500 * time.Millisecond)
-		// ищем span с текстом DOWNLOAD и поднимаемся к родительскому button
-		span, _ := wd.FindElement(selenium.ByXPATH, "//span[normalize-space()='DOWNLOAD']")
-		if span != nil {
-			downloadBtn, _ = span.FindElement(selenium.ByXPATH, "./ancestor::button[1]")
-			if downloadBtn != nil {
+	timeout := 15 * time.Second
+	interval := 500 * time.Millisecond
+	start := time.Now()
+
+	for time.Since(start) < timeout && downloadBtn == nil {
+		for _, xp := range xpaths {
+			elem, findErr := wd.FindElement(selenium.ByXPATH, xp)
+			if findErr == nil && elem != nil {
+				downloadBtn = elem
+				log.Info().Msgf("Нашли кнопку DOWNLOAD по XPath: %s", xp)
 				break
+			} else {
+				log.Debug().Msgf("XPath не сработал: %s", xp)
 			}
+		}
+		if downloadBtn == nil {
+			time.Sleep(interval)
 		}
 	}
 	if downloadBtn == nil {
+		log.Error().Msg("Не удалось найти кнопку DOWNLOAD в течение 15 секунд")
 		return fmt.Errorf("кнопка DOWNLOAD не найдена")
 	}
-	// кликаем по кнопке
+
+	// 4. Кликаем по найденному элементу
 	if err := downloadBtn.Click(); err != nil {
+		log.Error().Err(err).Msg("Ошибка при нажатии кнопки DOWNLOAD")
 		return fmt.Errorf("ошибка при клике по кнопке DOWNLOAD: %w", err)
 	}
+	log.Info().Msg("Кнопка DOWNLOAD успешно нажата")
 	return nil
 }
 
