@@ -109,7 +109,7 @@ func interactWithPage(wd selenium.WebDriver) error {
 		}
 	}
 
-	// Поиск и нажатие вкладки RECAP
+	// Переход на вкладку Recap (поиск по тексту)
 	recapTab, err := wd.FindElement(selenium.ByXPATH, "//div[contains(@class,'q-tab')][.//div[@class='q-tab__label' and normalize-space()='Recap']]")
 	if err != nil {
 		return fmt.Errorf("вкладка Recap не найдена: %w", err)
@@ -117,13 +117,24 @@ func interactWithPage(wd selenium.WebDriver) error {
 	if err := recapTab.Click(); err != nil {
 		return fmt.Errorf("ошибка при клике по вкладке Recap: %w", err)
 	}
-	time.Sleep(3 * time.Second)
 
-	// Поиск и нажатие кнопки DOWNLOAD
-	downloadBtn, err := wd.FindElement(selenium.ByXPATH, "//button[contains(., 'DOWNLOAD')]")
-	if err != nil {
-		return fmt.Errorf("кнопка DOWNLOAD не найдена: %w", err)
+	// Ожидаем появления кнопки DOWNLOAD (кнопка отрисовывается после спиннера)
+	var downloadBtn selenium.WebElement
+	for i := 0; i < 20; i++ { // ждём до 10 секунд, проверяя каждые 500 мс
+		time.Sleep(500 * time.Millisecond)
+		// ищем span с текстом DOWNLOAD и поднимаемся к родительскому button
+		span, _ := wd.FindElement(selenium.ByXPATH, "//span[normalize-space()='DOWNLOAD']")
+		if span != nil {
+			downloadBtn, _ = span.FindElement(selenium.ByXPATH, "./ancestor::button[1]")
+			if downloadBtn != nil {
+				break
+			}
+		}
 	}
+	if downloadBtn == nil {
+		return fmt.Errorf("кнопка DOWNLOAD не найдена")
+	}
+	// кликаем по кнопке
 	if err := downloadBtn.Click(); err != nil {
 		return fmt.Errorf("ошибка при клике по кнопке DOWNLOAD: %w", err)
 	}
