@@ -171,6 +171,7 @@ func interactWithPage(wd selenium.WebDriver) error {
 
 // waitForFileAndRename waits for a specific file to appear and renames it.
 func waitForFileAndRename(ctx context.Context, targetDir, oldFileName, newFileName string) (string, error) {
+	log.Info().Msg("Старт ожидания файла")
 	targetPath := filepath.Join(targetDir, oldFileName)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
