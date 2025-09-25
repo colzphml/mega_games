@@ -123,44 +123,33 @@ func interactWithPage(wd selenium.WebDriver) error {
 	_, _ = wd.ExecuteScript("window.scrollTo(0, document.body.scrollHeight);", nil)
 
 	// 4. Динамический поиск элемента с текстом download
-	xpaths := []string{
-		"//span[contains(@class,'block') and contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]",       // span.block с текстом download
-		"//i[contains(@class,'q-icon-on-left') and contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]", // иконка перед надписью Download
-		"//i[contains(@class,'q-icon') and contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]",         // любая иконка download
-		"//div[contains(@class,'q-btn') and contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]",        // div.q-btn c текстом download
-	}
-
 	var downloadBtn selenium.WebElement
 	timeout := 20 * time.Second
-	interval := 500 * time.Millisecond
 	start := time.Now()
+	interval := 500 * time.Millisecond
 
 	for time.Since(start) < timeout && downloadBtn == nil {
-		for _, xp := range xpaths {
-			elem, e := wd.FindElement(selenium.ByXPATH, xp)
-			if e == nil && elem != nil {
-				// Поднимаемся к родителю: кнопка (<button>), ссылка (<a>) или div с классом q-btn
-				parent, perr := elem.FindElement(selenium.ByXPATH, "./ancestor::*[self::button or self::a or contains(@class,'q-btn')][1]")
-				if perr == nil && parent != nil {
-					downloadBtn = parent
-					log.Info().Msgf("Нашли кнопку DOWNLOAD по XPath: %s", xp)
-					break
-				}
-			} else {
-				log.Debug().Msgf("XPath не сработал: %s", xp)
+		// Ищем только span.block, чтобы не захватывать иконки в меню
+		spanEl, e := wd.FindElement(selenium.ByXPATH, "//span[contains(@class,'block') and contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]")
+		if e == nil && spanEl != nil {
+			// поднимаемся к кнопке (button/a/div.q-btn) и кликаем
+			parent, perr := spanEl.FindElement(selenium.ByXPATH, "./ancestor::*[self::button or contains(@class,'q-btn') or self::a][1]")
+			if perr == nil && parent != nil {
+				downloadBtn = parent
+				log.Info().Msg("Нашли правильную кнопку DOWNLOAD через span.block")
+				break
 			}
 		}
-		if downloadBtn == nil {
-			// Прокручиваем немного дальше, чтобы динамический контент подгрузился
-			_, _ = wd.ExecuteScript("window.scrollBy(0, 300);", nil)
-			time.Sleep(interval)
-		}
-	}
 
+		// подскроллим ещё, вдруг элемент ещё не в DOM
+		_, _ = wd.ExecuteScript("window.scrollBy(0, 300);", nil)
+		time.Sleep(interval)
+	}
 	if downloadBtn == nil {
 		return fmt.Errorf("кнопка DOWNLOAD не найдена")
 	}
 
+	// 3. Кликаем
 	if err := downloadBtn.Click(); err != nil {
 		return fmt.Errorf("ошибка при нажатии кнопки DOWNLOAD: %w", err)
 	}
