@@ -132,13 +132,14 @@ func interactWithPage(wd selenium.WebDriver) error {
 		// Ищем только span.block, чтобы не захватывать иконки в меню
 		spanEl, e := wd.FindElement(selenium.ByXPATH, "//span[contains(@class,'block') and contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]")
 		if e == nil && spanEl != nil {
-			// поднимаемся к кнопке (button/a/div.q-btn) и кликаем
-			parent, perr := spanEl.FindElement(selenium.ByXPATH, "./ancestor::*[self::button or contains(@class,'q-btn') or self::a][1]")
-			if perr == nil && parent != nil {
-				downloadBtn = parent
-				log.Info().Msg("Нашли правильную кнопку DOWNLOAD через span.block")
-				break
-			}
+			downloadBtn = spanEl
+			// // поднимаемся к кнопке (button/a/div.q-btn) и кликаем
+			// parent, perr := spanEl.FindElement(selenium.ByXPATH, "./ancestor::*[self::button or contains(@class,'q-btn') or self::a][1]")
+			// if perr == nil && parent != nil {
+			// 	downloadBtn = parent
+			// 	log.Info().Msg("Нашли правильную кнопку DOWNLOAD через span.block")
+			// 	break
+			// }
 		}
 
 		// подскроллим ещё, вдруг элемент ещё не в DOM
