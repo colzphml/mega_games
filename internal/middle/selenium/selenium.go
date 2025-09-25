@@ -123,36 +123,22 @@ func interactWithPage(wd selenium.WebDriver) error {
 	_, _ = wd.ExecuteScript("window.scrollTo(0, document.body.scrollHeight);", nil)
 
 	// 4. Динамический поиск элемента с текстом download
-	var downloadBtn selenium.WebElement
-	timeout := 20 * time.Second
-	start := time.Now()
-	interval := 500 * time.Millisecond
-
-	for time.Since(start) < timeout && downloadBtn == nil {
-		// Ищем только span.block, чтобы не захватывать иконки в меню
-		spanEl, e := wd.FindElement(selenium.ByXPATH, "//span[contains(@class,'block') and contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]")
-		if e == nil && spanEl != nil {
-			downloadBtn = spanEl
-			// // поднимаемся к кнопке (button/a/div.q-btn) и кликаем
-			// parent, perr := spanEl.FindElement(selenium.ByXPATH, "./ancestor::*[self::button or contains(@class,'q-btn') or self::a][1]")
-			// if perr == nil && parent != nil {
-			// 	downloadBtn = parent
-			// 	log.Info().Msg("Нашли правильную кнопку DOWNLOAD через span.block")
-			// 	break
-			// }
-		}
-
-		// подскроллим ещё, вдруг элемент ещё не в DOM
-		_, _ = wd.ExecuteScript("window.scrollBy(0, 300);", nil)
-		time.Sleep(interval)
-	}
-	if downloadBtn == nil {
-		return fmt.Errorf("кнопка DOWNLOAD не найдена")
+	spanEl, err := wd.FindElement(selenium.ByXPATH, "//span[contains(@class,'block') and contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]")
+	if err != nil {
+		return fmt.Errorf("не удалось найти текст Download: %w", err)
 	}
 
-	// 3. Кликаем
-	if err := downloadBtn.Click(); err != nil {
-		return fmt.Errorf("ошибка при нажатии кнопки DOWNLOAD: %w", err)
+	// Поднимаемся к родителю, который содержит класс q-btn
+	btn, err := spanEl.FindElement(selenium.ByXPATH, "./ancestor::*[contains(@class,'q-btn')][1]")
+	if err != nil {
+		// На всякий случай можем попробовать кликнуть по самому span
+		_ = spanEl.Click()
+		return nil
+	}
+
+	// Кликаем по кнопке
+	if err := btn.Click(); err != nil {
+		return fmt.Errorf("ошибка при клике по кнопке Download: %w", err)
 	}
 	log.Info().Msg("Кнопка DOWNLOAD успешно нажата")
 	return nil
