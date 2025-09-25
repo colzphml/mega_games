@@ -102,42 +102,112 @@ func (c *Client) proceedUrl(ctx context.Context, url string) error {
 
 // interactWithPage взаимодействует с веб-страницей, например, нажимает кнопки.
 func interactWithPage(wd selenium.WebDriver) error {
-	// Попытка найти и нажать кнопку принятия cookies, если она есть
-	if consentBtns, _ := wd.FindElements(selenium.ByXPATH, "//button[contains(., 'Consent')]"); len(consentBtns) > 0 {
-		if err := consentBtns[0].Click(); err == nil {
-			time.Sleep(2 * time.Second)
-		}
+	// Увеличиваем время ожидания для страницы
+	wd.SetImplicitWaitTimeout(10 * time.Second)
+
+	// Попытка найти и нажать кнопку принятия куки с альтернативными селекторами
+	consentSelectors := []string{
+		"//p[@class='fc-button-label' and text()='Consent']",
+		"//button[contains(text(), 'Consent')]",
+		"//button[contains(@class, 'fc-') and contains(text(), 'Consent')]",
+		"//div[contains(@class, 'fc-consent')]//button[contains(text(), 'Consent')]",
+		"//button[@id='fc-consent-button']",
 	}
 
-	// Переход на вкладку Recap (поиск по тексту)
-	recapTab, err := wd.FindElement(selenium.ByXPATH, "//div[contains(@class,'q-tab')][.//div[@class='q-tab__label' and normalize-space()='Recap']]")
-	if err != nil {
-		return fmt.Errorf("вкладка Recap не найдена: %w", err)
-	}
-	if err := recapTab.Click(); err != nil {
-		return fmt.Errorf("ошибка при клике по вкладке Recap: %w", err)
-	}
-
-	// Ожидаем появления кнопки DOWNLOAD (кнопка отрисовывается после спиннера)
-	var downloadBtn selenium.WebElement
-	for i := 0; i < 20; i++ { // ждём до 10 секунд, проверяя каждые 500 мс
-		time.Sleep(500 * time.Millisecond)
-		// ищем span с текстом DOWNLOAD и поднимаемся к родительскому button
-		span, _ := wd.FindElement(selenium.ByXPATH, "//span[normalize-space()='DOWNLOAD']")
-		if span != nil {
-			downloadBtn, _ = span.FindElement(selenium.ByXPATH, "./ancestor::button[1]")
-			if downloadBtn != nil {
-				break
+	for _, selector := range consentSelectors {
+		consentBtn, err := wd.FindElement(selenium.ByXPATH, selector)
+		if err == nil {
+			if err := consentBtn.Click(); err != nil {
+				log.Error().Err(err).Msg("Ошибка при нажатии кнопки Consent")
+				continue
 			}
+			log.Info().Msg("Кнопка принятия куки успешно нажата")
+			time.Sleep(2 * time.Second)
+			break
 		}
 	}
-	if downloadBtn == nil {
-		return fmt.Errorf("кнопка DOWNLOAD не найдена")
+
+	// Поиск и нажатие кнопки RECAP с несколькими вариантами селекторов
+	recapSelectors := []string{
+		"//button[contains(text(), 'RECAP')]",
+		"//div[contains(text(), 'RECAP')]",
+		"//span[contains(text(), 'RECAP')]",
+		"//a[contains(text(), 'RECAP')]",
+		"//div[@class='q-tab__label' and text()='RECAP']",
+		"//div[contains(@class, 'q-tab') and contains(text(), 'RECAP')]",
+		"//div[@role='tab' and contains(text(), 'RECAP')]",
 	}
-	// кликаем по кнопке
+
+	var recapBtn selenium.WebElement
+	var recapErr error
+
+	for _, selector := range recapSelectors {
+		recapBtn, recapErr = wd.FindElement(selenium.ByXPATH, selector)
+		if recapErr == nil {
+			break
+		}
+	}
+
+	if recapErr != nil {
+		log.Error().Err(recapErr).Msg("Ошибка при поиске кнопки RECAP")
+		return recapErr
+	}
+
+	if err := recapBtn.Click(); err != nil {
+		log.Error().Err(err).Msg("Ошибка при нажатии кнопки RECAP")
+		return err
+	}
+
+	log.Info().Msg("Кнопка RECAP успешно нажата")
+	time.Sleep(3 * time.Second)
+
+	// Поиск и нажатие кнопки DOWNLOAD с множественными селекторами
+	downloadSelectors := []string{
+		"//button[contains(text(), 'DOWNLOAD')]",
+		"//a[contains(text(), 'DOWNLOAD')]",
+		"//span[contains(text(), 'DOWNLOAD')]",
+		"//button//span[contains(text(), 'DOWNLOAD')]",
+		"//div[@class='q-btn__content']//span[contains(text(), 'DOWNLOAD')]",
+		"//button[contains(@class, 'q-btn')]//span[contains(text(), 'DOWNLOAD')]",
+		"//div[contains(@class, 'q-btn') and contains(text(), 'DOWNLOAD')]",
+		"//div[@role='button' and contains(text(), 'DOWNLOAD')]",
+		"//button[.//text()[contains(., 'DOWNLOAD')]]",
+		"//i[contains(@class, 'download')]",
+	}
+
+	var downloadBtn selenium.WebElement
+	var downloadErr error
+
+	for _, selector := range downloadSelectors {
+		downloadBtn, downloadErr = wd.FindElement(selenium.ByXPATH, selector)
+		if downloadErr == nil {
+			log.Info().Str("selector", selector).Msg("Найдена кнопка DOWNLOAD")
+			break
+		}
+	}
+
+	if downloadErr != nil {
+		log.Error().Err(downloadErr).Msg("Ошибка при поиске кнопки DOWNLOAD")
+		return downloadErr
+	}
+
+	// Проверяем, что элемент видим и кликабелен
+	if displayed, err := downloadBtn.IsDisplayed(); err != nil || !displayed {
+		log.Error().Msg("Кнопка DOWNLOAD не видна")
+		return fmt.Errorf("кнопка DOWNLOAD не видна")
+	}
+
+	if enabled, err := downloadBtn.IsEnabled(); err != nil || !enabled {
+		log.Error().Msg("Кнопка DOWNLOAD не активна")
+		return fmt.Errorf("кнопка DOWNLOAD не активна")
+	}
+
 	if err := downloadBtn.Click(); err != nil {
-		return fmt.Errorf("ошибка при клике по кнопке DOWNLOAD: %w", err)
+		log.Error().Err(err).Msg("Ошибка при нажатии кнопки DOWNLOAD")
+		return err
 	}
+
+	log.Info().Msg("Кнопка DOWNLOAD успешно нажата")
 	return nil
 }
 
