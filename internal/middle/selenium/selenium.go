@@ -102,41 +102,30 @@ func (c *Client) proceedUrl(ctx context.Context, url string) error {
 
 // interactWithPage взаимодействует с веб-страницей, например, нажимает кнопки.
 func interactWithPage(wd selenium.WebDriver) error {
-	// Попытка найти и нажать кнопку принятия куки, если она существует
-	consentBtn, err := wd.FindElement(selenium.ByXPATH, "//p[@class='fc-button-label' and text()='Consent']")
-	if err == nil {
-		if err := consentBtn.Click(); err != nil {
-			log.Error().Err(err).Msg("Ошибка при нажатии кнопки Consent")
-			return err
+	// Попытка найти и нажать кнопку принятия cookies, если она есть
+	if consentBtns, _ := wd.FindElements(selenium.ByXPATH, "//button[contains(., 'Consent')]"); len(consentBtns) > 0 {
+		if err := consentBtns[0].Click(); err == nil {
+			time.Sleep(2 * time.Second)
 		}
-		// Ожидание, чтобы убедиться, что окно куки исчезло
-		time.Sleep(2 * time.Second)
-	} else {
-		log.Info().Msg("Кнопка принятия куки не найдена, возможно, она уже была принята ранее")
 	}
 
-	// Поиск и нажатие кнопки RECAP
-	recapBtn, err := wd.FindElement(selenium.ByXPATH, "//div[@id='q-app']/div/div/div/div[2]/main/div[2]/div[3]/div/div[3]/div[2]/div")
+	// Поиск и нажатие вкладки RECAP
+	recapTab, err := wd.FindElement(selenium.ByXPATH, "//div[contains(@class,'q-tab')][.//div[@class='q-tab__label' and normalize-space()='Recap']]")
 	if err != nil {
-		log.Error().Err(err).Msg("Ошибка при поиске кнопки RECAP")
-		return err
+		return fmt.Errorf("вкладка Recap не найдена: %w", err)
 	}
-	if err := recapBtn.Click(); err != nil {
-		log.Error().Err(err).Msg("Ошибка при нажатии кнопки RECAP")
-		return err
+	if err := recapTab.Click(); err != nil {
+		return fmt.Errorf("ошибка при клике по вкладке Recap: %w", err)
 	}
-
 	time.Sleep(3 * time.Second)
 
 	// Поиск и нажатие кнопки DOWNLOAD
-	downloadBtn, err := wd.FindElement(selenium.ByXPATH, "//div[@id='q-app']/div/div/div/div[2]/main/div[2]/div[4]/div/div/div/div[4]/button/span[2]/i")
+	downloadBtn, err := wd.FindElement(selenium.ByXPATH, "//button[contains(., 'DOWNLOAD')]")
 	if err != nil {
-		log.Error().Err(err).Msg("Ошибка при поиске кнопки DOWNLOAD")
-		return err
+		return fmt.Errorf("кнопка DOWNLOAD не найдена: %w", err)
 	}
 	if err := downloadBtn.Click(); err != nil {
-		log.Error().Err(err).Msg("Ошибка при нажатии кнопки DOWNLOAD")
-		return err
+		return fmt.Errorf("ошибка при клике по кнопке DOWNLOAD: %w", err)
 	}
 	return nil
 }
