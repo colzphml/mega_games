@@ -104,66 +104,54 @@ func (c *Client) proceedUrl(ctx context.Context, url string) error {
 func interactWithPage(wd selenium.WebDriver) error {
 	log.Info().Msg("Начинаем взаимодействие со страницей")
 
-	// 1. Принять cookies, если они есть
+	// Кнопка согласия с cookies
 	if consentBtns, _ := wd.FindElements(selenium.ByXPATH, "//button[contains(., 'Consent')]"); len(consentBtns) > 0 {
 		log.Info().Msg("Нашли кнопку Consent, нажимаем")
 		_ = consentBtns[0].Click()
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	// 2. Открыть вкладку Recap
+	// Вкладка Recap
 	recapTab, err := wd.FindElement(selenium.ByXPATH, "//div[contains(@class,'q-tab')][.//div[@class='q-tab__label' and normalize-space()='Recap']]")
 	if err != nil {
-		log.Error().Err(err).Msg("Вкладка Recap не найдена")
-		return err
+		return fmt.Errorf("вкладка Recap не найдена: %w", err)
 	}
 	_ = recapTab.Click()
-	log.Info().Msg("Вкладка Recap успешно выбрана")
+	log.Info().Msg("Вкладка Recap выбрана")
 
-	// 3. Прокрутить вниз, чтобы загрузить карточку с recap и кнопкой Download
-	if _, err := wd.ExecuteScript("window.scrollTo(0, document.body.scrollHeight);", nil); err != nil {
-		log.Warn().Err(err).Msg("Не удалось прокрутить страницу вниз через JS")
-	}
-	// даём странице отрисовать контент (вместо жёсткой паузы ждём через цикл)
+	// Прокрутить вниз, чтобы карточка с recap и кнопка Download появились в DOM
+	_, _ = wd.ExecuteScript("window.scrollTo(0, document.body.scrollHeight);", nil)
 
-	// 4. Ищем кнопку Download разными способами с таймаутом
-	xpaths := []string{
-		"//*[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]",                                                 // любой элемент с текстом download
-		"//span[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]/ancestor::*[@role='button' or name()='button'][1]", // span внутри кнопки/role=button
-		"//button[contains(@class,'q-btn') and contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]",                    // button с классом q-btn
-		"//div[contains(@class,'q-btn') and contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]",                       // div с классом q-btn
-	}
-	var download selenium.WebElement
+	// Динамический поиск span.block с текстом download
+	var downloadBtn selenium.WebElement
 	timeout := 20 * time.Second
-	start := time.Now()
 	interval := 500 * time.Millisecond
+	start := time.Now()
 
-	for time.Since(start) < timeout && download == nil {
-		for _, xp := range xpaths {
-			elem, e := wd.FindElement(selenium.ByXPATH, xp)
-			if e == nil && elem != nil {
-				download = elem
-				log.Info().Msgf("Нашли кнопку DOWNLOAD по XPath: %s", xp)
+	for time.Since(start) < timeout && downloadBtn == nil {
+		// ищем span.block, внутри которого текст содержит "download"
+		spanEl, spanErr := wd.FindElement(selenium.ByXPATH, "//span[@class='block' and contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]")
+		if spanErr == nil && spanEl != nil {
+			// поднимаемся к родителю, являющемуся кнопкой или элементом с role='button' или классом q-btn
+			parent, parentErr := spanEl.FindElement(selenium.ByXPATH, "./ancestor::*[self::button or @role='button' or contains(@class,'q-btn')][1]")
+			if parentErr == nil && parent != nil {
+				downloadBtn = parent
+				log.Info().Msg("Кнопка DOWNLOAD найдена через span.block")
 				break
-			} else {
-				log.Debug().Msgf("XPath не сработал: %s", xp)
 			}
 		}
-		if download == nil {
-			// Scroll немного вниз ещё раз, на случай частичной подгрузки
-			_, _ = wd.ExecuteScript("window.scrollBy(0, 400);", nil)
-			time.Sleep(interval)
-		}
+		// Если элемент не найден — чуть прокручиваем ещё и ждём
+		_, _ = wd.ExecuteScript("window.scrollBy(0, 300);", nil)
+		time.Sleep(interval)
 	}
-	if download == nil {
-		log.Error().Msg("Не удалось найти кнопку DOWNLOAD в течение 20 секунд")
+
+	if downloadBtn == nil {
 		return fmt.Errorf("кнопка DOWNLOAD не найдена")
 	}
 
-	// 5. Кликаем по кнопке
-	if err := download.Click(); err != nil {
-		log.Error().Err(err).Msg("Ошибка при нажатии кнопки DOWNLOAD")
-		return fmt.Errorf("ошибка при клике по кнопке DOWNLOAD: %w", err)
+	// Кликаем по найденной кнопке
+	if err := downloadBtn.Click(); err != nil {
+		return fmt.Errorf("ошибка при нажатии кнопки DOWNLOAD: %w", err)
 	}
 	log.Info().Msg("Кнопка DOWNLOAD успешно нажата")
 	return nil
