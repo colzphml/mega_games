@@ -123,7 +123,7 @@ func interactWithPage(wd selenium.WebDriver) error {
 	// Ищем кнопку q-btn, содержащую текст DOWNLOAD (в любом регистре)
 	downloadBtn, err := wd.FindElement(
 		selenium.ByXPATH,
-		"//*[contains(@class,'q-btn') and contains(translate(., 'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'DOWNLOAD')]",
+		"//*[contains(@class,'q-btn') and contains(translate(., 'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'DOWNLOAD')][0]",
 	)
 	if err != nil {
 		return fmt.Errorf("кнопка Download не найдена: %w", err)
