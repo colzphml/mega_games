@@ -100,39 +100,108 @@ func (c *Client) proceedUrl(ctx context.Context, url string) error {
 	return os.Remove(newPath)
 }
 
+func makeScreenshot(wd selenium.WebDriver, filename string) {
+	// Сделать скриншот
+	img, err := wd.Screenshot()
+	if err != nil {
+		log.Info().Msg("screenshot " + filename + " failed")
+	}
+	// Сохранить скриншот в файл
+	err = os.WriteFile("/mega/screens/"+filename+".png", img, 0644)
+	if err != nil {
+		log.Info().Msg("screenshot " + filename + " save failed")
+	}
+	log.Info().Msg("screenshot " + filename + " saved")
+}
+
+// waitUntil ждёт, пока условие cond вернёт true, либо пока не истечёт timeout.
+// Проверки выполняются каждые interval.
+func waitUntil(cond func() bool, timeout, interval time.Duration) bool {
+	start := time.Now()
+	for time.Since(start) < timeout {
+		if cond() {
+			return true
+		}
+		time.Sleep(interval)
+	}
+	return false
+}
+
+func waitPage(wd selenium.WebDriver) {
+	for {
+		state, err := wd.ExecuteScript("return document.readyState", nil)
+		if err != nil {
+			log.Fatal()
+		}
+		if state == "complete" {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // interactWithPage взаимодействует с веб-страницей, например, нажимает кнопки.
 func interactWithPage(wd selenium.WebDriver) error {
 	log.Info().Msg("Начинаем взаимодействие со страницей")
 
-	// Принимаем cookies, если нужно
+	// Принимаем cookies, если требуется
 	if consentBtns, _ := wd.FindElements(selenium.ByXPATH, "//button[contains(., 'Consent')]"); len(consentBtns) > 0 {
-		_ = consentBtns[0].Click()
-		time.Sleep(500 * time.Millisecond)
+		if err := consentBtns[0].Click(); err != nil {
+			log.Warn().Err(err).Msg("Не удалось нажать кнопку Consent")
+		}
 	}
 
-	// Переходим на вкладку Recap
-	recapTab, err := wd.FindElement(selenium.ByXPATH, "//div[contains(@class,'q-tab')][.//div[@class='q-tab__label' and normalize-space()='Recap']]")
-	if err != nil {
-		return fmt.Errorf("вкладка Recap не найдена: %w", err)
+	time.Sleep(2 * time.Second)
+
+	// Ожидаем появления вкладки Recap с тайм‑аутом 10 секунд
+	var recapTab selenium.WebElement
+	recapTabXPath := "//*[contains(@class,'q-tab') and @role='tab'][.//div[contains(@class,'q-tab__label') and translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')='recap']]"
+	foundRecap := waitUntil(func() bool {
+		elem, err := wd.FindElement(selenium.ByXPATH, recapTabXPath)
+		if err == nil && elem != nil {
+			recapTab = elem
+			return true
+		}
+		return false
+	}, 10*time.Second, 500*time.Millisecond)
+	if !foundRecap {
+		return fmt.Errorf("вкладка Recap не найдена")
 	}
-	_ = recapTab.Click()
 
-	// Скроллим страницу, чтобы Recap прогрузился
-	_, _ = wd.ExecuteScript("window.scrollTo(0, document.body.scrollHeight);", nil)
+	// Переключаемся на вкладку Recap
+	if err := recapTab.Click(); err != nil {
+		return fmt.Errorf("не удалось кликнуть по вкладке Recap: %w", err)
+	}
 
-	// Ищем кнопку q-btn, содержащую текст DOWNLOAD (в любом регистре)
-	downloadBtn, err := wd.FindElement(
-		selenium.ByXPATH,
-		"//*[contains(@class,'q-btn') and contains(translate(., 'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'DOWNLOAD')][1]",
+	// // Прокручиваем страницу, чтобы загрузился контент Recap
+	// _, _ = wd.ExecuteScript("window.scrollTo(0, document.body.scrollHeight);", nil)
+
+	// Ожидаем появления кнопки Download (только <button> с текстом DOWNLOAD)
+	var downloadBtn selenium.WebElement
+	foundDownload := waitUntil(func() bool {
+		elem, err := wd.FindElement(selenium.ByXPATH, "//button[contains(translate(., 'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'DOWNLOAD')]")
+		if err == nil && elem != nil {
+			downloadBtn = elem
+			return true
+		}
+		return false
+	}, 15*time.Second, 500*time.Millisecond)
+	if !foundDownload {
+		return fmt.Errorf("кнопка Download не найдена")
+	}
+
+	time.Sleep(2 * time.Second)
+	// Скроллим к кнопке, чтобы она не перекрывалась тулбаром
+	_, _ = wd.ExecuteScript(
+		"arguments[0].scrollIntoView({block: 'center', inline: 'nearest'})",
+		[]interface{}{downloadBtn},
 	)
-	if err != nil {
-		return fmt.Errorf("кнопка Download не найдена: %w", err)
-	}
 
-	// Кликаем
+	// Пытаемся нажать на кнопку Download
 	if err := downloadBtn.Click(); err != nil {
 		return fmt.Errorf("ошибка при клике по Download: %w", err)
 	}
+
 	log.Info().Msg("Кнопка Download успешно нажата")
 	return nil
 }
