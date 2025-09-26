@@ -1,91 +1,110 @@
 # Mega Games Result Sender
 
-Mega Games Result Sender is an automation service that connects Discord, Selenium, and Telegram to streamline the process of capturing, processing, and forwarding game results and notifications. It is designed for tournament organizers and communities who need to automate the flow of match results from Discord to Telegram channels, including screenshots and notifications.
+Автоматизирует передачу результатов турнира из Discord в Telegram, используя Selenium для получения скриншотов с сайта лиги. Приложение запускает три независимых сервиса (источник, промежуточный слой и целевой), объединённые по каналам обмена сообщениями.
 
-## Features
-- **Discord Integration:** Listens to messages in a specified Discord channel.
-- **Selenium Automation:** Interacts with web pages (e.g., for screenshots or data extraction) using Selenium running in a container.
-- **Telegram Notifications:** Sends processed results, announcements, and screenshots to designated Telegram channels.
-- **Configurable Workflow:** All behavior is managed via a YAML configuration file.
-- **Dockerized Deployment:** Easily run all components in isolated containers.
+## Что делает сервис
+- Подключается к Discord-каналу и отслеживает сообщения бота с вложениями (embeds).
+- Распознаёт объявления о переходе на новую неделю сезона и формирует расписание на основе CSV с играми и командами.
+- Для каждого embed с ссылкой на игру открывает страницу в браузере Chrome через Selenium Hub, переключается на вкладку Recap и инициирует выгрузку `game-recap.jpeg`.
+- Переименовывает скачанный файл по номеру игры, читает байты и отправляет изображение вместе с ссылкой в общий канал Telegram.
+- Публикует текст объявления «новой недели» в новостной канал Telegram с дедлайном для анонсов матчей.
 
-## Architecture
+## Архитектура
 ```
-Discord Channel → [Discord Bot] → [Selenium Automation] → [Telegram Bot]
+Discord → Source (internal/sourceSM/discord) → Middle (internal/middle/selenium) → Target (internal/targetSM/telegram) → Telegram
+                          ↘︎ utils.ParseScheduleFromCSV / ParseCSVFileToTeams (расписание и команды)
 ```
-- The Discord bot listens for relevant messages (e.g., match results) and passes them to the automation pipeline.
-- Selenium performs any required web automation (e.g., taking screenshots of match results).
-- The Telegram bot sends notifications and files to the appropriate Telegram channels.
 
-## Configuration
-Create a `config.yaml` file in the project root with the following structure:
+### Основные компоненты
+- **Source (Discord)** — `internal/sourceSM/discord`: слушает новые сообщения, парсит embeds, выявляет ссылки на игры и объявления о новой неделе.
+- **Middle (Selenium)** — `internal/middle/selenium`: открывает страницу игры, нажимает Download и дожидается появления файла в `app.file_storage_path`.
+- **Target (Telegram)** — `internal/targetSM/telegram`: в зависимости от типа сообщения отправляет либо текст в новостной канал, либо изображение в общий канал.
+- **Конфигурация** — `pkg/config`: загружает YAML и переопределяет значения переменными окружения, проверяет обязательные поля.
+- **Утилиты** — `pkg/utils`: собирает расписание и команды из CSV (`MEGA_games.csv`, `MEGA_teams.csv`).
+
+## Требования
+- Go `>= 1.22`
+- Docker и Docker Compose (для запуска Selenium и приложения в контейнерах)
+- Файлы данных: `MEGA_games.csv`, `MEGA_teams.csv`
+- Настроенный `config.yaml` с актуальными токенами и путями
+
+## Настройка конфигурации
+Создайте `config.yaml` в корне проекта. Пример:
 
 ```yaml
 app:
-  middle:
-    type: "selenium"
-    middle_url: "http://localhost:4444/wd/hub"   # Selenium Hub URL
   source:
     type: "discord"
-    token: "DISCORD_BOT_TOKEN"                    # Discord bot token
-    channel_id: "DISCORD_CHANNEL_ID"              # Discord channel ID
+    token: "DISCORD_BOT_TOKEN"
+    channel_id: "DISCORD_CHANNEL_ID"
+  middle:
+    type: "selenium"
+    middle_url: "http://selenium:4444/wd/hub"
   target:
     type: "telegram"
-    token: "TELEGRAM_BOT_TOKEN"                   # Telegram bot token
-    common_channel_id: "TELEGRAM_COMMON_CHANNEL_ID" # Common Telegram channel/chat ID
-    news_channel_id: "TELEGRAM_NEWS_CHANNEL_ID"     # News Telegram channel/chat ID
-  file_storage_path: "./screens"                  # Where screenshots/files are saved
-  games_url: "https://example.com/games"          # URL to fetch game information
-  schedule_path: "./MEGA_games.csv"               # Path to game schedule CSV
-  players_path: "./MEGA_teams.csv"                # Path to players CSV
-  cache_size: 100                                  # Cache size for temporary data
+    token: "TELEGRAM_BOT_TOKEN"
+    common_channel_id: "TELEGRAM_COMMON_CHAT_ID"
+    news_channel_id: "TELEGRAM_NEWS_CHAT_ID"
+  file_storage_path: "./screens"
+  games_url: "https://neonsportz.com/leagues/MEGA/games"
+  schedule_path: "./MEGA_games.csv"
+  players_path: "./MEGA_teams.csv"
+  deep_history: 100
+  cache_size: 100
 ```
 
-### Parameter Descriptions
-- **Discord Section:**
-  - `token`: Discord bot authentication token
-  - `channel_id`: Channel where the bot listens for messages
-- **Telegram Section:**
-  - `token`: Telegram bot authentication token
-  - `common_channel_id`: Main Telegram channel for general notifications
-  - `news_channel_id`: Telegram channel for news/announcements
-- **Selenium Section:**
-  - `middle_url`: URL of the Selenium Hub (default: local container)
-- **Other Fields:**
-    - `file_storage_path`: Local directory for screenshots/files
-  - `games_url`: Source of game information
-  - `schedule_path` & `players_path`: CSV files for schedules and players
-  - `cache_size`: In-memory cache size for performance
+> Значения могут быть переопределены переменными окружения (`SOURCE_TOKEN`, `TARGET_TOKEN` и т.д.). Все поля обязательны — при отсутствии любого приложение завершится с ошибкой на этапе запуска.
 
-## Usage
-1. **Build and Start Services:**
-   Ensure Docker is installed and running. From the project root, run:
-   ```bash
-   docker compose up -d
-   ```
-   This will start both the Selenium service and the main application.
+## Запуск
+### Через Docker Compose
+```bash
+docker compose up -d
+```
+- Сервис `app` собирается из `./cmd`
+- Сервис `selenium` поднимает Chrome WebDriver
+- Скачанные файлы сохраняются в `./screens`
 
-2. **Logs and Monitoring:**
-   Check logs using:
+Просмотр логов:
+```bash
+docker compose logs -f app
+```
+Остановка:
+```bash
+docker compose down
+```
+
+### Локально (без контейнеров)
+1. Запустите Selenium Hub/Node локально или используйте существующий.
+2. Убедитесь, что Chrome доступен для Selenium.
+3. Выполните:
    ```bash
-   docker compose logs -f
+   go run ./cmd
    ```
 
-3. **Stopping Services:**
-   ```bash
-   docker compose down
-   ```
+## Как работает поток событий
+1. Discord bot получает embed → `HandleMessages` кладёт сообщение во внутренний канал.
+2. `ProceedMessages` опрашивает сообщение до появления embeds:
+   - Если embed объявляет новую неделю — составляется расписание и отправляется `TargetMessage{Action:"newWeek"}`.
+   - Если embed содержит ссылки на игры — формируется `DiscordGame` на каждую ссылку и отправляется в канал middle.
+3. Middle получает `DiscordGame`, открывает страницу Selenium, нажимает Download и ждёт файл `game-recap.jpeg`.
+4. Файл переименовывается в `<gameId>.jpeg`, читается и отправляется как `TargetMessage{Action:"game"}`.
+5. Telegram клиент принимает сообщение:
+   - `newWeek` → Markdown-анонс в новостной чат с дедлайном (зона `Europe/Moscow`).
+   - `game` → Загрузка изображения в общий чат с подписью-ссылкой.
 
-## Security & Best Practices
-- Do **NOT** commit `config.yaml` or any secrets to version control. This file is already listed in `.gitignore`.
-- Restrict access to your storage directories and keep bot tokens secure.
+## Отладка и советы
+- Если Selenium не может найти элементы, включите `bot.Debug = true` в Telegram и увеличьте таймауты в `interactWithPage`.
+- Проверяйте, что каталог `app.file_storage_path` смонтирован в контейнер Selenium и доступен приложению.
+- Для обновления расписания/команд замените CSV-файлы и перезапустите сервис.
 
-## Troubleshooting
-- Ensure all tokens and channel IDs in `config.yaml` are valid and have correct permissions.
-- The Selenium service must be running and accessible at the specified `middle_url`.
-- The storage path (e.g., `./screens`) must be writable by the Docker container.
-- Place all referenced CSV files (`MEGA_games.csv`, `MEGA_teams.csv`) in the project root.
-- For advanced issues, consult logs or refer to the documentation for Discord, Selenium, or Telegram bots.
+## Структура каталогов
+- `cmd/main.go` — точка входа.
+- `internal/app` — сборка приложения, управление goroutine и завершением.
+- `internal/sourceSM` — источники данных (Discord).
+- `internal/middle` — промежуточная обработка (Selenium).
+- `internal/targetSM` — отправка в целевые системы (Telegram).
+- `pkg/config` — конфигурация.
+- `pkg/utils` — утилиты работы с CSV.
 
 ---
-For further assistance, check application logs or contact the project maintainer.
+Поддерживайте `config.yaml` и токены в безопасности: файл добавлен в `.gitignore`, не коммитьте секреты в репозиторий.
