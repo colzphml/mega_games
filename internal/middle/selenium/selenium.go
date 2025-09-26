@@ -104,14 +104,14 @@ func (c *Client) proceedUrl(ctx context.Context, url string) error {
 func interactWithPage(wd selenium.WebDriver) error {
 	log.Info().Msg("Начинаем взаимодействие со страницей")
 
-	// Кнопка согласия с cookies
+	// Принять cookies, если нужно
 	if consentBtns, _ := wd.FindElements(selenium.ByXPATH, "//button[contains(., 'Consent')]"); len(consentBtns) > 0 {
 		log.Info().Msg("Нашли кнопку Consent, нажимаем")
 		_ = consentBtns[0].Click()
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	// Вкладка Recap
+	// Перейти на вкладку Recap
 	recapTab, err := wd.FindElement(selenium.ByXPATH, "//div[contains(@class,'q-tab')][.//div[@class='q-tab__label' and normalize-space()='Recap']]")
 	if err != nil {
 		return fmt.Errorf("вкладка Recap не найдена: %w", err)
@@ -119,28 +119,37 @@ func interactWithPage(wd selenium.WebDriver) error {
 	_ = recapTab.Click()
 	log.Info().Msg("Вкладка Recap выбрана")
 
-	// 3. Прокрутить вниз, чтобы карточка recap и кнопка Download появились
+	// Прокрутить вниз, чтобы раздел Recap прогрузился
 	_, _ = wd.ExecuteScript("window.scrollTo(0, document.body.scrollHeight);", nil)
 
-	// 4. Динамический поиск элемента с текстом download
-	spanEl, err := wd.FindElement(selenium.ByXPATH, "//span[contains(@class,'block') and contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download')]")
+	// Ищем span.block с текстом Download (учитывая регистр)
+	spanEl, err := wd.FindElement(
+		selenium.ByXPATH,
+		"//span[contains(@class,'block') and contains(., 'Download')]",
+	)
 	if err != nil {
-		return fmt.Errorf("не удалось найти текст Download: %w", err)
+		return fmt.Errorf("не удалось найти текст \"Download\" в кнопке: %w", err)
 	}
 
-	// Поднимаемся к родителю, который содержит класс q-btn
-	btn, err := spanEl.FindElement(selenium.ByXPATH, "./ancestor::*[contains(@class,'q-btn')][1]")
+	// Поднимаемся к родительскому элементу кнопки (q-btn) и кликаем по нему
+	btn, err := spanEl.FindElement(
+		selenium.ByXPATH,
+		"./ancestor::*[contains(@class,'q-btn')][1]",
+	)
 	if err != nil {
-		// На всякий случай можем попробовать кликнуть по самому span
-		_ = spanEl.Click()
+		// В крайнем случае кликнуть по самому <span>
+		if clickErr := spanEl.Click(); clickErr != nil {
+			return fmt.Errorf("не удалось кликнуть по элементу Download: %w", clickErr)
+		}
+		log.Info().Msg("Кнопка Download нажата через <span>")
 		return nil
 	}
 
-	// Кликаем по кнопке
 	if err := btn.Click(); err != nil {
 		return fmt.Errorf("ошибка при клике по кнопке Download: %w", err)
 	}
-	log.Info().Msg("Кнопка DOWNLOAD успешно нажата")
+
+	log.Info().Msg("Большая кнопка Download успешно нажата")
 	return nil
 }
 
