@@ -97,7 +97,7 @@ func (c *Client) ProceedMessages(ctx context.Context, wg *sync.WaitGroup) {
 			log.Info().Msg("stopping Discord message processor")
 			return
 		case msg := <-c.InternalChan:
-			for {
+			for i := 0; i < 50; i++ {
 				time.Sleep(100 * time.Millisecond)
 				message, err := c.Dg.ChannelMessage(c.ChannelId, msg.MessageId)
 				if err != nil {
