@@ -71,6 +71,7 @@ func (c *Client) HandleMessages(ctx context.Context, wg *sync.WaitGroup) {
 			MessageId: m.ID,
 			Proceed:   false,
 		}
+		log.Info().Msg(msg.MessageId)
 		time.Sleep(5 * time.Second)
 		c.InternalChan <- msg
 	}
@@ -143,28 +144,25 @@ func (c *Client) Close() error {
 func (c *Client) readMessageEmbeds(message *discordgo.Message) model.DiscordMessage {
 	var result model.DiscordMessage
 	result.MessageId = message.ID
-
 	for _, embed := range message.Embeds {
 		if strings.Contains(embed.Title, "has advanced to") && (strings.Contains(embed.Title, "Pre Season") || strings.Contains(embed.Title, "Regular Season")) {
 			games := c.parseAdvanceMessage(embed.Title)
 			result.NewWeek = true
 			result.NewWeekText = c.buildScheduleText(embed.Title, games)
 			return result // Early return for efficiency
-		} else if embed.Fields != nil {
-			for _, field := range embed.Fields {
-				if strings.Contains(field.Value, "**") && strings.Contains(field.Value, "MEGA/games") {
-					url, err := extractURL(field.Value)
-					if err != nil {
-						log.Error().Err(err).Msg("error extracting URL from message")
-						continue // Skip this field on error
-					}
-
-					result.Games = append(result.Games, model.DiscordGame{
-						MessageId:  message.ID,
-						GameNumber: field.Name,
-						GameUrl:    url,
-					})
+		} else if embed.Description != "" {
+			if strings.Contains(embed.Description, "**") && strings.Contains(embed.Description, "MEGA/games") {
+				url, err := extractURL(embed.Description)
+				if err != nil {
+					log.Error().Err(err).Msg("error extracting URL from message")
+					continue // Skip this field on error
 				}
+
+				result.Games = append(result.Games, model.DiscordGame{
+					MessageId:  message.ID,
+					GameNumber: embed.Description,
+					GameUrl:    url,
+				})
 			}
 		}
 	}
@@ -174,8 +172,8 @@ func (c *Client) readMessageEmbeds(message *discordgo.Message) model.DiscordMess
 
 // extractURL extracts a URL from a string field, ensuring correct formatting and error handling.
 func extractURL(fieldValue string) (string, error) {
-	start := strings.LastIndex(fieldValue, "(") + 1
-	end := strings.LastIndex(fieldValue, ")")
+	start := strings.LastIndex(fieldValue, "(") + 2
+	end := strings.LastIndex(fieldValue, ")") - 1
 	if start <= 0 || end <= start {
 		log.Debug().Msg("URL not found in the field value")
 		return "", fmt.Errorf("URL not found")
