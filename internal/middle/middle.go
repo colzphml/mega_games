@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/colzphml/mega_games/internal/middle/gochrome"
+	"github.com/colzphml/mega_games/internal/middle/headless"
 	"github.com/colzphml/mega_games/internal/middle/selenium"
 	"github.com/colzphml/mega_games/internal/model"
 	"github.com/colzphml/mega_games/pkg/config"
@@ -18,6 +20,10 @@ func NewMiddler(ctx context.Context, cfg *config.Config, messageChan <-chan mode
 	switch cfg.App.Middle.Type {
 	case "selenium":
 		return selenium.NewClient(ctx, cfg, messageChan, targetChan)
+	case "headless":
+		return headless.NewClient(ctx, cfg, messageChan, targetChan)
+	case "gochrome":
+		return gochrome.NewClient(ctx, cfg, messageChan, targetChan)
 	default:
 		return nil, &ErrUnsupportedMiddleType{SourceType: cfg.App.Middle.Type}
 	}

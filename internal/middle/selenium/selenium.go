@@ -86,6 +86,7 @@ func (c *Client) proceedUrl(ctx context.Context, url string) error {
 		return fmt.Errorf("waiting for file and renaming failed: %w", err)
 	}
 
+	log.Info().Str("path", newPath).Msg("file found")
 	image, err := os.ReadFile(newPath)
 	if err != nil {
 		return fmt.Errorf("reading file failed: %w", err)
