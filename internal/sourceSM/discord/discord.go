@@ -150,6 +150,22 @@ func (c *Client) readMessageEmbeds(message *discordgo.Message) model.DiscordMess
 			result.NewWeek = true
 			result.NewWeekText = c.buildScheduleText(embed.Title, games)
 			return result // Early return for efficiency
+		} else if embed.Fields != nil {
+			for _, field := range embed.Fields {
+				if strings.Contains(field.Value, "**") && strings.Contains(field.Value, "MEGA/games") {
+					url, err := extractURL(field.Value)
+					if err != nil {
+						log.Error().Err(err).Msg("error extracting URL from message")
+						continue // Skip this field on error
+					}
+
+					result.Games = append(result.Games, model.DiscordGame{
+						MessageId:  message.ID,
+						GameNumber: field.Name,
+						GameUrl:    url,
+					})
+				}
+			}
 		} else if embed.Description != "" {
 			if strings.Contains(embed.Description, "**") && strings.Contains(embed.Description, "MEGA/games") {
 				url, err := extractURL(embed.Description)
