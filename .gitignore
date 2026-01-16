@@ -42,5 +42,6 @@ project.xcodeproj/
 
 **/config.yaml
 .env
+примеры сообщений.txt
 
 screens/

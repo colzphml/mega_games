@@ -33,17 +33,12 @@ func ParseMessage(message *discordgo.Message) Result {
 		return Result{Ready: false}
 	}
 
-	ready := false
 	gameSet := map[string]struct{}{}
 	var week *WeekUpdate
 
 	for _, embed := range message.Embeds {
 		if embed == nil {
 			continue
-		}
-		hasContent := strings.TrimSpace(embed.Title) != "" || strings.TrimSpace(embed.Description) != "" || len(embed.Fields) > 0
-		if hasContent {
-			ready = true
 		}
 
 		if week == nil && strings.Contains(embed.Title, "has advanced to") {
@@ -59,13 +54,13 @@ func ParseMessage(message *discordgo.Message) Result {
 			if !strings.Contains(field.Value, "MEGA/games") {
 				continue
 			}
-			if gameNumber, ok := extractGameNumber(field.Name, field.Value); ok {
+			for _, gameNumber := range extractGameNumbers(field.Name, field.Value) {
 				gameSet[gameNumber] = struct{}{}
 			}
 		}
 
 		if strings.Contains(embed.Description, "MEGA/games") {
-			if gameNumber, ok := extractGameNumber(embed.Description); ok {
+			for _, gameNumber := range extractGameNumbers(embed.Description) {
 				gameSet[gameNumber] = struct{}{}
 			}
 		}
@@ -78,7 +73,7 @@ func ParseMessage(message *discordgo.Message) Result {
 	sort.Strings(games)
 
 	return Result{
-		Ready: ready,
+		Ready: week != nil || len(games) > 0,
 		Week:  week,
 		Games: games,
 	}
@@ -106,17 +101,26 @@ func parseWeek(title string) (*WeekUpdate, bool) {
 	return &WeekUpdate{Season: season, Week: week}, true
 }
 
-func extractGameNumber(values ...string) (string, bool) {
+func extractGameNumbers(values ...string) []string {
+	set := map[string]struct{}{}
 	for _, value := range values {
 		if value == "" {
 			continue
 		}
-		if match := gameNumberRe.FindStringSubmatch(value); len(match) == 2 {
-			return match[1], true
+		for _, match := range gameNumberRe.FindAllStringSubmatch(value, -1) {
+			if len(match) == 2 {
+				set[match[1]] = struct{}{}
+			}
 		}
-		if match := gameURLRe.FindStringSubmatch(value); len(match) == 2 {
-			return match[1], true
+		for _, match := range gameURLRe.FindAllStringSubmatch(value, -1) {
+			if len(match) == 2 {
+				set[match[1]] = struct{}{}
+			}
 		}
 	}
-	return "", false
+	result := make([]string, 0, len(set))
+	for value := range set {
+		result = append(result, value)
+	}
+	return result
 }
