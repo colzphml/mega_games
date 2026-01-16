@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -41,12 +40,16 @@ const (
 var log = zerolog.New(os.Stdout).With().Str("package", "gochrome").Timestamp().Logger()
 
 // Client renders recap images from NeonSportz web UI via headless Chrome (chromedp).
-// Strategy:
+//
+// Strategy (robust, download-like):
 // - Load game page
 // - Switch to "Recap" tab
+// - Hide/remove cookie overlays (WITHOUT accepting cookies)
 // - Remove fixed app chrome (header/toolbars) so it can't overlay recap
-// - Wait recap assets
-// - Screenshot #recap-wrapper (includes stadium background + correct styling)
+// - Wait recap assets (supports <img> and CSS background images)
+// - Ensure stadium background is applied to #recap-wrapper (some pages keep it outside wrapper)
+// - Wait stadium bg image actually loads (preload via Image.onload)
+// - Screenshot #recap-wrapper (this matches the exported card styling best)
 type Client struct {
 	MessageChan <-chan model.DiscordGame
 	TargetChan  chan<- model.TargetMessage
@@ -96,7 +99,7 @@ func (c *Client) proceedGame(ctx context.Context, message model.DiscordGame) err
 		return fmt.Errorf("recap is not available: game.status=%d (usually means not completed yet)", recap.Game.Status)
 	}
 
-	// 2) Headless Chrome screenshot of #recap-wrapper (includes stadium background).
+	// 2) Headless Chrome screenshot
 	pngBytes, err := screenshotRecapWrapper(ctx, gameURL, defaultTimeout, defaultHeadless, defaultSleepAfter, defaultAssetsWait, defaultViewportW, defaultViewportH)
 	if err != nil {
 		return fmt.Errorf("screenshot failed: %w", err)
@@ -114,7 +117,6 @@ func (c *Client) proceedGame(ctx context.Context, message model.DiscordGame) err
 		Value:  message.GameUrl,
 		Image:  pngBytes,
 	}
-
 	return nil
 }
 
@@ -274,12 +276,23 @@ func screenshotRecapWrapper(
 		setStage("assets"),
 		waitRecapAssetsLoadedSync(assetsWait),
 
+		// Stadium background: some pages keep it outside wrapper, so we inject it into wrapper.
+		// IMPORTANT: we then WAIT for the background image to actually load, otherwise you may see
+		// a "half-rendered" band at the top.
+		setStage("inject stadium background"),
+		ensureStadiumBackground(),
+
+		setStage("wait stadium"),
+		waitStadiumReady(8 * time.Second),
+
 		setStage("scroll into view"),
 		chromedp.ScrollIntoView(recapWrapperSel, chromedp.ByQuery),
 
 		setStage("pre-screenshot cleanup"),
 		stripConsentOverlay(),
-		removeAppChrome(), // иногда header возвращается при ре-рендере
+		removeAppChrome(),
+		ensureStadiumBackground(),
+		waitStadiumReady(4 * time.Second),
 
 		setStage("sleep after"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -297,7 +310,7 @@ func screenshotRecapWrapper(
 		return nil, fmt.Errorf("stage %s: %w", stage, err)
 	}
 	if len(pngBytes) == 0 {
-		return nil, dumpDebug(ctx, "empty wrapper screenshot")
+		return nil, fmt.Errorf("stage %s: empty wrapper screenshot", stage)
 	}
 	return pngBytes, nil
 }
@@ -367,6 +380,7 @@ func stripConsentOverlay() chromedp.Action {
       }
     }
 
+    // Big dark full-screen overlays
     const divs = Array.from(document.querySelectorAll("div")).slice(0, 3500);
     for (const d of divs) {
       const s = getComputedStyle(d);
@@ -414,6 +428,151 @@ func removeAppChrome() chromedp.Action {
 `
 		var ok bool
 		_ = chromedp.Evaluate(js, &ok).Do(ctx)
+		return nil
+	})
+}
+
+// ensureStadiumBackground injects stadium background into #recap-wrapper if the page
+// keeps it outside wrapper (e.g., on parent container or via pseudo-elements).
+// It stores the chosen stadium URL in data-stadium-url for waitStadiumReady().
+func ensureStadiumBackground() chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		js := `
+(() => {
+  try {
+    const wrap = document.querySelector("#recap-wrapper");
+    if (!wrap) return { ok:false, reason:"wrap_missing" };
+
+    const extractUrl = (bg) => {
+      if (!bg || bg === "none") return "";
+      const m = bg.match(/url\((['"]?)(.*?)\1\)/i);
+      return (m && m[2]) ? m[2] : "";
+    };
+
+    // If wrapper already has url bg (maybe set by app), keep it but record URL.
+    const wStyle = getComputedStyle(wrap);
+    const existingUrl = extractUrl(wStyle.backgroundImage);
+    if (existingUrl) {
+      wrap.setAttribute("data-stadium-url", existingUrl);
+      // don't assume it's loaded; waitStadiumReady will confirm
+      return { ok:true, injected:false, url: existingUrl };
+    }
+
+    // Find best stadium-ish URL in visible DOM.
+    const nodes = Array.from(document.querySelectorAll("div, section, main")).slice(0, 6000);
+    let bestUrl = "";
+    let bestArea = 0;
+
+    for (const el of nodes) {
+      const s = getComputedStyle(el);
+      const bg = (s.backgroundImage || "").trim();
+      if (!bg || bg === "none") continue;
+
+      if (!(bg.includes("stadium") || bg.includes("stadiums") || bg.includes("mediafiles") || bg.includes("/uploads/"))) continue;
+
+      const url = extractUrl(bg);
+      if (!url) continue;
+
+      const r = el.getBoundingClientRect();
+      const area = r.width * r.height;
+      if (r.width > 300 && r.height > 200 && area > bestArea) {
+        bestArea = area;
+        bestUrl = url;
+      }
+    }
+
+    if (!bestUrl) {
+      // last resort: body/html
+      const b1 = extractUrl(getComputedStyle(document.body).backgroundImage);
+      const b2 = extractUrl(getComputedStyle(document.documentElement).backgroundImage);
+      bestUrl = b1 || b2;
+    }
+
+    if (!bestUrl) return { ok:false, reason:"stadium_bg_not_found" };
+
+    wrap.setAttribute("data-stadium-url", bestUrl);
+    wrap.setAttribute("data-stadium-ready", "0");
+
+    // Apply with subtle dark overlay (close to site look)
+    wrap.style.setProperty(
+      "background-image",
+      'linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url("' + bestUrl + '")',
+      "important"
+    );
+    wrap.style.setProperty("background-size", "cover", "important");
+    wrap.style.setProperty("background-position", "center center", "important");
+    wrap.style.setProperty("background-repeat", "no-repeat", "important");
+    wrap.style.setProperty("background-color", "#000", "important");
+
+    return { ok:true, injected:true, url:bestUrl };
+  } catch (e) {
+    return { ok:false, reason:String(e && e.message ? e.message : e) };
+  }
+})()
+`
+		var res struct {
+			OK       bool   `json:"ok"`
+			Injected bool   `json:"injected"`
+			URL      string `json:"url"`
+			Reason   string `json:"reason"`
+		}
+		_ = chromedp.Evaluate(js, &res).Do(ctx)
+		if res.OK && res.URL != "" {
+			log.Debug().Str("stadiumUrl", res.URL).Bool("injected", res.Injected).Msg("stadium background prepared")
+		}
+		return nil
+	})
+}
+
+// waitStadiumReady preloads the chosen stadium URL (stored in #recap-wrapper[data-stadium-url])
+// and waits for Image.onload. This prevents "partially rendered" bands in screenshot.
+func waitStadiumReady(maxWait time.Duration) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		js := `
+(async () => {
+  const wrap = document.querySelector("#recap-wrapper");
+  if (!wrap) return { ok:false, reason:"wrap_missing" };
+
+  const url = wrap.getAttribute("data-stadium-url") || "";
+  if (!url) return { ok:true, skipped:true, reason:"no_stadium_url" };
+
+  if (wrap.getAttribute("data-stadium-ready") === "1") {
+    return { ok:true, ready:true, cached:true };
+  }
+
+  const ok = await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+
+  wrap.setAttribute("data-stadium-ready", ok ? "1" : "0");
+  return { ok: ok, ready: ok };
+})()
+`
+		deadline := time.Now().Add(maxWait)
+		for time.Now().Before(deadline) {
+			var res struct {
+				OK      bool   `json:"ok"`
+				Ready   bool   `json:"ready"`
+				Skipped bool   `json:"skipped"`
+				Reason  string `json:"reason"`
+			}
+			_ = chromedp.Evaluate(js, &res).Do(ctx)
+
+			if res.Skipped {
+				// nothing to wait for
+				return nil
+			}
+			if res.OK && res.Ready {
+				return nil
+			}
+			time.Sleep(250 * time.Millisecond)
+		}
+
+		// Not fatal: still proceed with screenshot
+		log.Warn().Msg("stadium background not confirmed loaded before screenshot (continuing)")
 		return nil
 	})
 }
@@ -495,6 +654,7 @@ func waitRecapAssetsLoadedSync(maxWait time.Duration) chromedp.Action {
     const container = wrap.querySelector("#recap-container");
     if (!container) return { ok:false, stage:"container_missing" };
 
+    // Regular <img> tags
     const imgs = Array.from(wrap.querySelectorAll("img"));
     let pending = 0;
     for (const im of imgs) {
@@ -502,19 +662,19 @@ func waitRecapAssetsLoadedSync(maxWait time.Duration) chromedp.Action {
       if (!good) pending++;
     }
 
-    const nodes = Array.from(wrap.querySelectorAll("div, span")).slice(0, 3000);
+    // CSS background images (Quasar q-img often uses div with bg-image)
+    const nodes = Array.from(wrap.querySelectorAll("div, span")).slice(0, 4000);
     let bgHits = 0;
     for (const el of nodes) {
       const bi = (getComputedStyle(el).backgroundImage || "").trim();
       if (!bi || bi === "none") continue;
-      if (bi.includes("teamlogos") || bi.includes("stadiums") || bi.includes("mediafiles/uploads")) {
+      if (bi.includes("teamlogos") || bi.includes("stadiums") || bi.includes("mediafiles/uploads") || bi.includes("/uploads/")) {
         const r = el.getBoundingClientRect();
         if (r.width > 0 && r.height > 0) bgHits++;
       }
       if (bgHits >= 2) break;
     }
 
-    // Accept either: all imgs complete OR background images detected
     const ok = (imgs.length > 0 && pending === 0) || (bgHits >= 2);
     return { ok, stage: ok ? "done":"waiting", imgCount: imgs.length, pending, bgHits };
   } catch (e) {
@@ -551,57 +711,6 @@ func waitRecapAssetsLoadedSync(maxWait time.Duration) chromedp.Action {
 }
 
 // -------------------------
-// Debug helpers
-// -------------------------
-
-func dumpDebug(ctx context.Context, reason string) error {
-	var (
-		title   string
-		loc     string
-		snippet string
-		fullPNG []byte
-	)
-
-	_ = chromedp.Title(&title).Do(ctx)
-	_ = chromedp.Location(&loc).Do(ctx)
-
-	_ = chromedp.Evaluate(`
-(() => {
-  const t = (document.body && (document.body.innerText || "")) || "";
-  return t.slice(0, 1200);
-})()
-`, &snippet).Do(ctx)
-
-	_ = chromedp.FullScreenshot(&fullPNG, 90).Do(ctx)
-	if len(fullPNG) > 0 {
-		_ = os.WriteFile("/tmp/neons_debug_full.png", fullPNG, 0o644)
-	}
-
-	log.Error().
-		Str("reason", reason).
-		Str("title", title).
-		Str("location", loc).
-		Str("snippet", snippet).
-		Msg("neonsportz debug (saved /tmp/neons_debug_full.png)")
-
-	return fmt.Errorf("%s (title=%q location=%s)", reason, title, loc)
-}
-
-func pageDebug(ctx context.Context) (string, error) {
-	var title string
-	if err := chromedp.Title(&title).Do(ctx); err != nil {
-		return "", err
-	}
-	var bodyText string
-	if err := chromedp.Evaluate(`document.body ? (document.body.innerText || "") : ""`, &bodyText).Do(ctx); err != nil {
-		return "", err
-	}
-	re := regexp.MustCompile(`(?i)\bRecap\b`)
-	hasRecap := re.MatchString(bodyText)
-	return fmt.Sprintf(`title=%q recapTextPresent=%v`, title, hasRecap), nil
-}
-
-// -------------------------
 // URL helpers
 // -------------------------
 
@@ -632,6 +741,7 @@ func buildGameURL(inURL, league, gameID string) (gameURL, l, g string, err error
 
 func parseLeagueGameFromPath(p string) (league, game string) {
 	parts := strings.Split(strings.Trim(p, "/"), "/")
+	// Expect: ["leagues", "<L>", "games", "<G>"]
 	if len(parts) >= 4 && parts[0] == "leagues" && parts[2] == "games" {
 		return parts[1], parts[3]
 	}

@@ -128,10 +128,10 @@ func (c *Client) sendImage(message model.TargetMessage) error {
 	})
 	photo.Caption = message.Value
 
-	// if _, err := c.Bot.Send(photo); err != nil {
-	// 	log.Error().Err(err).Msg("failed to send image")
-	// 	return err
-	// }
+	if _, err := c.Bot.Send(photo); err != nil {
+		log.Error().Err(err).Msg("failed to send image")
+		return err
+	}
 
 	log.Debug().Str("url", message.Value).Msg("image sent")
 	return nil
