@@ -41,5 +41,6 @@ project.xcodeproj/
 *.prof
 
 **/config.yaml
+.env
 
 screens/

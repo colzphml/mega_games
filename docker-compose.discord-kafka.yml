@@ -1,0 +1,58 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - kafka
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        for i in $(seq 1 30); do
+          kafka-topics --bootstrap-server ${KAFKA_BROKERS} --create --if-not-exists --topic ${KAFKA_TOPIC} --partitions ${KAFKA_PARTITIONS} --replication-factor ${KAFKA_REPLICATION_FACTOR} && exit 0
+          echo "waiting for kafka..."
+          sleep 2
+        done
+        exit 1
+
+  discord-kafka-listener:
+    build:
+      context: ./discord_kafka_listener
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${APP_VERSION}
+    platform: ${TARGET_PLATFORM}
+    env_file:
+      - .env
+    depends_on:
+      - kafka-init
+
+volumes:
+  kafka-data:
+  zookeeper-data:
+  zookeeper-log:
