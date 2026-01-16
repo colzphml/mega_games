@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	defaultTimeout    = 120 * time.Second // чуть увеличим, потому что иногда тяжелые страницы
+	defaultTimeout    = 140 * time.Second
 	defaultAPITimeout = 15 * time.Second
-	defaultAssetsWait = 45 * time.Second
+	defaultAssetsWait = 60 * time.Second
 
 	defaultViewportW  = 2600
 	defaultViewportH  = 1500
@@ -41,6 +41,12 @@ const (
 var log = zerolog.New(os.Stdout).With().Str("package", "gochrome").Timestamp().Logger()
 
 // Client renders recap images from NeonSportz web UI via headless Chrome (chromedp).
+// Strategy:
+// - Load game page
+// - Switch to "Recap" tab
+// - Remove fixed app chrome (header/toolbars) so it can't overlay recap
+// - Wait recap assets
+// - Screenshot #recap-wrapper (includes stadium background + correct styling)
 type Client struct {
 	MessageChan <-chan model.DiscordGame
 	TargetChan  chan<- model.TargetMessage
@@ -90,8 +96,8 @@ func (c *Client) proceedGame(ctx context.Context, message model.DiscordGame) err
 		return fmt.Errorf("recap is not available: game.status=%d (usually means not completed yet)", recap.Game.Status)
 	}
 
-	// 2) Headless Chrome screenshot
-	pngBytes, err := screenshotRecap(ctx, gameURL, defaultTimeout, defaultHeadless, defaultSleepAfter, defaultAssetsWait, defaultViewportW, defaultViewportH)
+	// 2) Headless Chrome screenshot of #recap-wrapper (includes stadium background).
+	pngBytes, err := screenshotRecapWrapper(ctx, gameURL, defaultTimeout, defaultHeadless, defaultSleepAfter, defaultAssetsWait, defaultViewportW, defaultViewportH)
 	if err != nil {
 		return fmt.Errorf("screenshot failed: %w", err)
 	}
@@ -190,10 +196,10 @@ func fetchRecapJSON(apiURL, userAgent string, to time.Duration) (*RecapResponse,
 }
 
 // -------------------------
-// Headless Chrome screenshot
+// Headless Chrome screenshot (wrapper-based)
 // -------------------------
 
-func screenshotRecap(
+func screenshotRecapWrapper(
 	parentCtx context.Context,
 	gameURL string,
 	overallTimeout time.Duration,
@@ -213,8 +219,6 @@ func screenshotRecap(
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("headless", headless),
 		chromedp.Flag("disable-dev-shm-usage", true),
-
-		// чуть меньше шансов, что сайт будет вести себя иначе
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 	)
 
@@ -227,9 +231,10 @@ func screenshotRecap(
 	ctx, cancel3 := chromedp.NewContext(ctx)
 	defer cancel3()
 
-	var pngBytes []byte
-	var stage string
-	recapSelector := "#recap-wrapper"
+	var (
+		pngBytes []byte
+		stage    string
+	)
 
 	setStage := func(name string) chromedp.ActionFunc {
 		return func(ctx context.Context) error {
@@ -239,12 +244,13 @@ func screenshotRecap(
 		}
 	}
 
+	const recapWrapperSel = "#recap-wrapper"
+
 	tasks := chromedp.Tasks{
 		setStage("emulation"),
 		emulation.SetDeviceMetricsOverride(int64(viewportW), int64(viewportH), 1.0, false),
 		emulation.SetUserAgentOverride(defaultUserAgent),
 
-		// ВКЛЮЧАЕМ network + блокировку CMP (без fetch, без дедлоков)
 		setStage("network"),
 		network.Enable(),
 		network.SetBlockedURLs(cmpBlockedURLPatterns()),
@@ -253,7 +259,6 @@ func screenshotRecap(
 		chromedp.Navigate(gameURL),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 
-		// НЕ принимаем cookies — просто убираем оверлей.
 		setStage("strip consent overlay"),
 		stripConsentOverlay(),
 
@@ -261,15 +266,20 @@ func screenshotRecap(
 		waitAndClickRecapTab(),
 
 		setStage("recap wrapper"),
-		waitRecapWrapperRobust(assetsWait, &recapSelector),
-		chromedp.ScrollIntoView(recapSelector, chromedp.ByQuery),
+		waitRecapWrapperRobust(assetsWait),
+
+		setStage("remove app chrome"),
+		removeAppChrome(),
 
 		setStage("assets"),
-		waitRecapAssetsLoadedSync(assetsWait, &recapSelector),
+		waitRecapAssetsLoadedSync(assetsWait),
 
-		// CMP может “догрузиться” и показаться позже — убираем ещё раз перед скрином.
+		setStage("scroll into view"),
+		chromedp.ScrollIntoView(recapWrapperSel, chromedp.ByQuery),
+
 		setStage("pre-screenshot cleanup"),
 		stripConsentOverlay(),
+		removeAppChrome(), // иногда header возвращается при ре-рендере
 
 		setStage("sleep after"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -280,27 +290,27 @@ func screenshotRecap(
 		}),
 
 		setStage("screenshot"),
-		chromedp.Screenshot(recapSelector, &pngBytes, chromedp.NodeVisible, chromedp.ByQuery),
+		chromedp.Screenshot(recapWrapperSel, &pngBytes, chromedp.NodeVisible, chromedp.ByQuery),
 	}
 
 	if err := chromedp.Run(ctx, tasks); err != nil {
 		return nil, fmt.Errorf("stage %s: %w", stage, err)
 	}
+	if len(pngBytes) == 0 {
+		return nil, dumpDebug(ctx, "empty wrapper screenshot")
+	}
 	return pngBytes, nil
 }
 
 // -------------------------
-// CMP blocking (safe, no fetch intercept)
+// CMP blocking + overlay removal (NO accept)
 // -------------------------
 
 func cmpBlockedURLPatterns() []string {
-	// Это паттерны CDP network.SetBlockedURLS (поддерживает * wildcard).
-	// Стараемся быть аккуратными: блокируем типичные CMP/consent вендоры.
 	return []string{
 		"*://*/*quantcast*",
 		"*://*/*qc-cmp*",
 		"*://*/*cmp2*",
-
 		"*://*/*didomi*",
 		"*://*/*onetrust*",
 		"*://*/*cookiebot*",
@@ -311,27 +321,17 @@ func cmpBlockedURLPatterns() []string {
 		"*://*/*consentmanager*",
 		"*://*/*privacy-manager*",
 		"*://*/*privacy-mgmt*",
-
-		// generic consent/tcf (осторожно — может задеть что-то лишнее, но обычно ок)
 		"*://*/*iab*consent*",
 		"*://*/*tcf*",
 		"*://*/*gdpr*consent*",
 	}
 }
 
-// -------------------------
-// UI helpers
-// -------------------------
-
-// stripConsentOverlay removes/hides cookie/CMP overlays WITHOUT accepting consent.
-// It hides overlay-like nodes (fixed + big + high z-index) and restores body/html scrolling.
 func stripConsentOverlay() chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		js := `
 (() => {
   try {
-    const removed = [];
-
     const hide = (el) => {
       if (!el) return;
       el.style.setProperty("display", "none", "important");
@@ -357,22 +357,17 @@ func stripConsentOverlay() chromedp.Action {
       "[id*='cmp']", "[class*='cmp']",
       "[id*='consent']", "[class*='consent']",
       "[id*='tcf']", "[class*='tcf']",
-      // иногда CMP кладёт root в body прямым ребёнком
       "body > div[style*='z-index']"
     ];
 
     for (const sel of selectors) {
       const nodes = Array.from(document.querySelectorAll(sel));
       for (const n of nodes) {
-        if (looksLikeOverlay(n)) {
-          hide(n);
-          removed.push(sel);
-        }
+        if (looksLikeOverlay(n)) hide(n);
       }
     }
 
-    // full screen backdrops (затемнение)
-    const divs = Array.from(document.querySelectorAll("div")).slice(0, 3000);
+    const divs = Array.from(document.querySelectorAll("div")).slice(0, 3500);
     for (const d of divs) {
       const s = getComputedStyle(d);
       if (s.position !== "fixed") continue;
@@ -380,57 +375,72 @@ func stripConsentOverlay() chromedp.Action {
       const full = r.width >= window.innerWidth * 0.95 && r.height >= window.innerHeight * 0.95;
       const z = parseFloat(s.zIndex || "0");
       const darkish = (s.backgroundColor && s.backgroundColor !== "rgba(0, 0, 0, 0)");
-      if (full && z >= 100 && darkish) {
-        hide(d);
-        removed.push("fullscreen-backdrop");
-      }
+      if (full && z >= 100 && darkish) hide(d);
     }
 
-    // restore scroll
     document.documentElement.style.setProperty("overflow", "auto", "important");
     document.body.style.setProperty("overflow", "auto", "important");
-
-    return { ok: true, removedCount: removed.length };
-  } catch (e) {
-    return { ok: false, error: String(e && e.message ? e.message : e) };
-  }
+    return true;
+  } catch (_) { return false; }
 })()
 `
-		var res struct {
-			OK           bool   `json:"ok"`
-			RemovedCount int    `json:"removedCount"`
-			Error        string `json:"error"`
-		}
-		_ = chromedp.Evaluate(js, &res).Do(ctx)
-		if res.OK && res.RemovedCount > 0 {
-			log.Debug().Int("removedCount", res.RemovedCount).Msg("stripConsentOverlay: overlay hidden")
-		}
+		var ok bool
+		_ = chromedp.Evaluate(js, &ok).Do(ctx)
 		return nil
 	})
 }
+
+// removeAppChrome removes fixed Quasar header/toolbars so they can't overlay recap.
+func removeAppChrome() chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		js := `
+(() => {
+  try {
+    const selectors = [
+      "header",
+      ".q-header",
+      ".q-layout__section--marginal",
+      ".q-toolbar",
+      "[role='banner']"
+    ];
+    for (const sel of selectors) {
+      document.querySelectorAll(sel).forEach(el => el.remove());
+    }
+    document.body.style.paddingTop = "0";
+    document.documentElement.style.paddingTop = "0";
+    return true;
+  } catch (_) { return false; }
+})()
+`
+		var ok bool
+		_ = chromedp.Evaluate(js, &ok).Do(ctx)
+		return nil
+	})
+}
+
+// -------------------------
+// Recap navigation + readiness
+// -------------------------
 
 func waitAndClickRecapTab() chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		js := `
 (() => {
-  const text = "recap";
   const candidates = [];
   const els = Array.from(document.querySelectorAll('[role="tab"], .q-tab'));
   for (const el of els) {
     const label = el.querySelector(".q-tab__label") || el;
     const t = (label.innerText || label.textContent || "").trim().toLowerCase();
     if (!t) continue;
-    if (t === text || t.includes("recap")) {
+    if (t === "recap" || t.includes("recap")) {
       const r = el.getBoundingClientRect();
-      const visible = r.width > 0 && r.height > 0;
-      if (visible) candidates.push(el);
+      if (r.width > 0 && r.height > 0) candidates.push(el);
     }
   }
-  let target = candidates.find(e => ((e.innerText||e.textContent||"").trim().toLowerCase() === text));
-  if (!target) target = candidates[0];
-  if (!target) return { ok: false, reason: "Recap tab not found in DOM" };
+  const target = candidates[0];
+  if (!target) return { ok:false, reason:"Recap tab not found" };
   target.click();
-  return { ok: true };
+  return { ok:true };
 })()
 `
 		deadline := time.Now().Add(20 * time.Second)
@@ -447,76 +457,52 @@ func waitAndClickRecapTab() chromedp.Action {
 			}
 			if err != nil {
 				lastErr = err
-			} else if !res.OK {
+			} else {
 				lastErr = errors.New(res.Reason)
 			}
 			time.Sleep(300 * time.Millisecond)
 		}
-
-		return dumpDebug(ctx, fmt.Sprintf("failed to click Recap tab: %v", lastErr))
+		return fmt.Errorf("failed to click Recap tab: %v", lastErr)
 	})
 }
 
-func waitRecapWrapperRobust(maxWait time.Duration, selector *string) chromedp.Action {
+func waitRecapWrapperRobust(maxWait time.Duration) chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
-		if selector != nil {
-			*selector = "#recap-wrapper"
-		}
-
 		deadline := time.Now().Add(maxWait)
-
 		for time.Now().Before(deadline) {
 			var exists bool
 			err := chromedp.Evaluate(`!!document.querySelector("#recap-wrapper")`, &exists).Do(ctx)
 			if err == nil && exists {
 				return nil
 			}
-
-			_ = chromedp.Run(ctx,
-				waitAndClickRecapTab(),
-				chromedp.Sleep(350*time.Millisecond),
-			)
-
+			_ = chromedp.Run(ctx, waitAndClickRecapTab(), chromedp.Sleep(350*time.Millisecond))
 			time.Sleep(250 * time.Millisecond)
 		}
-
-		return dumpDebug(ctx, "recap wrapper not found after wait")
+		return fmt.Errorf("recap wrapper not found")
 	})
 }
 
 // waitRecapAssetsLoadedSync: promise-free polling.
-// Handles both <img> and Quasar q-img (background-image) rendering.
-func waitRecapAssetsLoadedSync(maxWait time.Duration, selector *string) chromedp.Action {
+// Works even if images are rendered as CSS backgrounds (Quasar q-img).
+func waitRecapAssetsLoadedSync(maxWait time.Duration) chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
-		sel := "#recap-wrapper"
-		if selector != nil && *selector != "" {
-			sel = *selector
-		}
-
-		js := fmt.Sprintf(`
+		js := `
 (() => {
   try {
-    const wrap = document.querySelector(%q);
-    if (!wrap) return { ok: false, stage: "wrap_missing", reason: "wrap_not_found" };
+    const wrap = document.querySelector("#recap-wrapper");
+    if (!wrap) return { ok:false, stage:"wrap_missing" };
 
     const container = wrap.querySelector("#recap-container");
-    if (!container) return { ok: false, stage: "container_missing", reason: "recap_container_not_found" };
-
-    const bg = (getComputedStyle(wrap).backgroundImage || "").trim();
-    const hasBg = bg && bg !== "none";
+    if (!container) return { ok:false, stage:"container_missing" };
 
     const imgs = Array.from(wrap.querySelectorAll("img"));
-    const imgCount = imgs.length;
-
     let pending = 0;
     for (const im of imgs) {
-      const complete = im.complete === true;
-      const good = complete && (im.naturalWidth || 0) > 0;
+      const good = im.complete === true && (im.naturalWidth||0) > 0;
       if (!good) pending++;
     }
 
-    // Quasar q-img / CSS backgrounds
-    const nodes = Array.from(wrap.querySelectorAll("div, span")).slice(0, 2500);
+    const nodes = Array.from(wrap.querySelectorAll("div, span")).slice(0, 3000);
     let bgHits = 0;
     for (const el of nodes) {
       const bi = (getComputedStyle(el).backgroundImage || "").trim();
@@ -528,31 +514,18 @@ func waitRecapAssetsLoadedSync(maxWait time.Duration, selector *string) chromedp
       if (bgHits >= 2) break;
     }
 
-    const hasVisualAssets = (imgCount > 0 && pending === 0) || (bgHits >= 2);
-
-    if (!hasVisualAssets) {
-      return { ok: false, stage: "assets_missing", reason: "no_loaded_imgs_and_no_bg_hits", imgCount, pending, bgHits, hasBg };
-    }
-
-    return { ok: true, stage: "done", reason: "ok", imgCount, pending, bgHits, hasBg };
+    // Accept either: all imgs complete OR background images detected
+    const ok = (imgs.length > 0 && pending === 0) || (bgHits >= 2);
+    return { ok, stage: ok ? "done":"waiting", imgCount: imgs.length, pending, bgHits };
   } catch (e) {
-    return { ok: false, stage: "js_error", reason: String(e && e.message ? e.message : e) };
+    return { ok:false, stage:"js_error", reason:String(e && e.message ? e.message : e) };
   }
 })()
-`, sel)
-
+`
 		deadline := time.Now().Add(maxWait)
-
-		lastStage := "init"
-		lastReason := "starting"
-		lastImgCount := -1
-		lastPending := -1
-		lastBgHits := -1
-		lastHasBg := false
-
+		var last string
 		for time.Now().Before(deadline) {
-			// CMP может всплыть “позже” — регулярно чистим
-			_ = chromedp.Run(ctx, stripConsentOverlay())
+			_ = stripConsentOverlay().Do(ctx)
 
 			var res struct {
 				OK      bool   `json:"ok"`
@@ -561,41 +534,25 @@ func waitRecapAssetsLoadedSync(maxWait time.Duration, selector *string) chromedp
 				ImgCnt  int    `json:"imgCount"`
 				Pending int    `json:"pending"`
 				BgHits  int    `json:"bgHits"`
-				HasBg   bool   `json:"hasBg"`
 			}
-
-			err := chromedp.Evaluate(js, &res).Do(ctx)
-			if err != nil {
-				lastStage = "eval_error"
-				lastReason = err.Error()
+			if err := chromedp.Evaluate(js, &res).Do(ctx); err != nil {
+				last = "eval_error: " + err.Error()
 				time.Sleep(250 * time.Millisecond)
 				continue
 			}
-
-			if res.Stage != "" {
-				lastStage = res.Stage
-			}
-			if res.Reason != "" {
-				lastReason = res.Reason
-			}
-			lastImgCount = res.ImgCnt
-			lastPending = res.Pending
-			lastBgHits = res.BgHits
-			lastHasBg = res.HasBg
-
 			if res.OK {
 				return nil
 			}
-
+			last = fmt.Sprintf("stage=%s img=%d pending=%d bgHits=%d reason=%s", res.Stage, res.ImgCnt, res.Pending, res.BgHits, res.Reason)
 			time.Sleep(250 * time.Millisecond)
 		}
-
-		return dumpDebug(ctx, fmt.Sprintf(
-			"timeout waiting recap assets: stage=%s reason=%s imgCount=%d pending=%d bgHits=%d hasBg=%v",
-			lastStage, lastReason, lastImgCount, lastPending, lastBgHits, lastHasBg,
-		))
+		return fmt.Errorf("timeout waiting recap assets: %s", last)
 	})
 }
+
+// -------------------------
+// Debug helpers
+// -------------------------
 
 func dumpDebug(ctx context.Context, reason string) error {
 	var (
@@ -641,7 +598,7 @@ func pageDebug(ctx context.Context) (string, error) {
 	}
 	re := regexp.MustCompile(`(?i)\bRecap\b`)
 	hasRecap := re.MatchString(bodyText)
-	return fmt.Sprintf(`title=%q recapTextPresent=%v (if false: recap hidden or game not completed)`, title, hasRecap), nil
+	return fmt.Sprintf(`title=%q recapTextPresent=%v`, title, hasRecap), nil
 }
 
 // -------------------------
@@ -659,7 +616,7 @@ func buildGameURL(inURL, league, gameID string) (gameURL, l, g string, err error
 		}
 		l, g = parseLeagueGameFromPath(u.Path)
 		if l == "" || g == "" {
-			return u.String(), "", "", fmt.Errorf("cannot parse league/game from url path; provide -league and -game too")
+			return u.String(), "", "", fmt.Errorf("cannot parse league/game from url path")
 		}
 		return u.String(), l, g, nil
 	}
