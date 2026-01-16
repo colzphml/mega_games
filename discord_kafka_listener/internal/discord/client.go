@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/rs/zerolog"
@@ -13,6 +14,7 @@ type Client struct {
 	channelID string
 	out       chan<- string
 	log       zerolog.Logger
+	ready     atomic.Bool
 }
 
 func NewClient(token, channelID string, out chan<- string, log zerolog.Logger) (*Client, error) {
@@ -31,6 +33,19 @@ func NewClient(token, channelID string, out chan<- string, log zerolog.Logger) (
 
 func (c *Client) Start(ctx context.Context) error {
 	c.session.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsGuildMessages)
+
+	c.session.AddHandler(func(s *discordgo.Session, _ *discordgo.Ready) {
+		c.ready.Store(true)
+		c.log.Info().Msg("discord session ready")
+	})
+	c.session.AddHandler(func(s *discordgo.Session, _ *discordgo.Resumed) {
+		c.ready.Store(true)
+		c.log.Info().Msg("discord session resumed")
+	})
+	c.session.AddHandler(func(s *discordgo.Session, _ *discordgo.Disconnect) {
+		c.ready.Store(false)
+		c.log.Warn().Msg("discord session disconnected")
+	})
 
 	c.session.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m == nil || m.Message == nil {
@@ -54,6 +69,7 @@ func (c *Client) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
+		c.ready.Store(false)
 		_ = c.session.Close()
 	}()
 
@@ -62,4 +78,8 @@ func (c *Client) Start(ctx context.Context) error {
 
 func (c *Client) Close() error {
 	return c.session.Close()
+}
+
+func (c *Client) Ready() bool {
+	return c.ready.Load()
 }

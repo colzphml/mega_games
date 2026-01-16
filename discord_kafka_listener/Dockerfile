@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.25.5-alpine AS build
 
 SHELL ["/bin/sh", "-c"]
 
@@ -7,29 +7,38 @@ ARG TARGETARCH
 ARG VERSION
 ARG COMMIT
 ARG BUILD_DATE
+ARG TZ=Europe/Moscow
+
+ENV TZ=$TZ
 
 WORKDIR /src
 
 RUN apk add --no-cache git tzdata
 
-COPY go.mod ./
+COPY .git ./.git
+
+WORKDIR /src/discord_kafka_listener
+COPY discord_kafka_listener/go.mod discord_kafka_listener/go.sum ./
 RUN go mod download
 
-COPY . ./
-RUN VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo unknown)}" \
-    COMMIT="${COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}" \
-    BUILD_DATE="${BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" \
-    GOOS="${TARGETOS:-linux}" \
-    GOARCH="${TARGETARCH:-amd64}" \
-    CGO_ENABLED=0 \
+COPY discord_kafka_listener/ ./
+RUN set -eu; \
+    VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo unknown)}"; \
+    COMMIT="${COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"; \
+    BUILD_DATE="${BUILD_DATE:-$(date +%Y-%m-%dT%H:%M:%S%z)}"; \
+    GOOS="${TARGETOS:-linux}"; \
+    GOARCH="${TARGETARCH:-amd64}"; \
+    CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
     go build -o /out/discord-kafka-listener \
-    -ldflags "-s -w \
-      -X main.buildVersion=${VERSION} \
-      -X main.buildCommit=${COMMIT} \
-      -X main.buildDate=${BUILD_DATE}" \
+    -ldflags "-s -w -X main.buildVersion=${VERSION} -X main.buildCommit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
     ./cmd/discord-kafka-listener
 
-FROM alpine:3.20
+FROM alpine:3.21
+
+ARG TZ=Europe/Moscow
+ENV TZ=$TZ
+
+RUN apk add --no-cache tzdata
 
 RUN adduser -D -g '' app
 USER app

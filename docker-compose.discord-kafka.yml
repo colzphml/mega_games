@@ -2,11 +2,14 @@ services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
     environment:
+      TZ: ${TZ}
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
       - zookeeper-log:/var/lib/zookeeper/log
+    networks:
+      - megagames-net
 
   kafka:
     image: confluentinc/cp-kafka:7.6.1
@@ -15,6 +18,7 @@ services:
     ports:
       - "9092:9092"
     environment:
+      TZ: ${TZ}
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
@@ -24,11 +28,15 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
     volumes:
       - kafka-data:/var/lib/kafka/data
+    networks:
+      - megagames-net
 
   kafka-init:
     image: confluentinc/cp-kafka:7.6.1
     depends_on:
       - kafka
+    environment:
+      TZ: ${TZ}
     entrypoint:
       - /bin/bash
       - -c
@@ -39,20 +47,37 @@ services:
           sleep 2
         done
         exit 1
+    networks:
+      - megagames-net
 
   discord-kafka-listener:
     build:
-      context: ./discord_kafka_listener
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: discord_kafka_listener/Dockerfile
       args:
         VERSION: ${APP_VERSION}
+        TZ: ${TZ}
     platform: ${TARGET_PLATFORM}
     env_file:
       - .env
+    environment:
+      TZ: ${TZ}
     depends_on:
       - kafka-init
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - megagames-net
 
 volumes:
   kafka-data:
   zookeeper-data:
   zookeeper-log:
+
+networks:
+  megagames-net:
+    driver: bridge

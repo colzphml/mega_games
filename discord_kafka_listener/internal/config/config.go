@@ -12,6 +12,8 @@ const (
 	defaultWriteTimeout  = 5 * time.Second
 	defaultBufferSize    = 256
 	defaultKafkaClientID = "discord-kafka-listener"
+	defaultHealthAddr    = ":8080"
+	defaultTimezone      = "Europe/Moscow"
 )
 
 type Config struct {
@@ -22,6 +24,8 @@ type Config struct {
 	KafkaClientID     string
 	KafkaWriteTimeout time.Duration
 	MessageBufferSize int
+	HealthAddr        string
+	Timezone          string
 }
 
 func Load() (Config, error) {
@@ -53,6 +57,8 @@ func Load() (Config, error) {
 	if cfg.MessageBufferSize, err = intEnv("MESSAGE_BUFFER_SIZE", defaultBufferSize); err != nil {
 		return Config{}, err
 	}
+	cfg.HealthAddr = optionalEnv("HEALTH_ADDR", defaultHealthAddr)
+	cfg.Timezone = optionalEnv("TZ", defaultTimezone)
 
 	return cfg, nil
 }
