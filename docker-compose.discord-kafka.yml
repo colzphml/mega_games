@@ -45,7 +45,7 @@ services:
       - |
         for i in $(seq 1 30); do
           ok=1
-          for topic in "$$KAFKA_INPUT_TOPIC" "$$KAFKA_WEEK_TOPIC" "$$KAFKA_GAME_TOPIC"; do
+          for topic in "$$KAFKA_INPUT_TOPIC" "$$KAFKA_WEEK_TOPIC" "$$KAFKA_GAME_TOPIC" "$$KAFKA_TELEGRAM_WEEK_TOPIC"; do
             if [ -z "$$topic" ]; then
               ok=0
               continue
@@ -75,7 +75,8 @@ services:
     environment:
       TZ: ${TZ}
     depends_on:
-      - kafka-init
+      kafka-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
       interval: 10s
@@ -118,8 +119,36 @@ services:
     environment:
       TZ: ${TZ}
     depends_on:
-      - kafka-init
-      - postgres
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - megagames-net
+
+  discord-kafka-week-formatter:
+    build:
+      context: .
+      dockerfile: discord_kafka_week_formatter/Dockerfile
+      args:
+        VERSION: ${APP_VERSION}
+        TZ: ${TZ}
+    platform: ${TARGET_PLATFORM}
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
       interval: 10s
