@@ -20,7 +20,7 @@ type Config struct {
 	DiscordToken      string
 	DiscordChannelID  string
 	KafkaBrokers      []string
-	KafkaTopic        string
+	KafkaInputTopic   string
 	KafkaClientID     string
 	KafkaWriteTimeout time.Duration
 	MessageBufferSize int
@@ -46,7 +46,7 @@ func Load() (Config, error) {
 	if len(cfg.KafkaBrokers) == 0 {
 		return Config{}, fmt.Errorf("KAFKA_BROKERS must contain at least one broker")
 	}
-	if cfg.KafkaTopic, err = requiredEnv("KAFKA_TOPIC"); err != nil {
+	if cfg.KafkaInputTopic, err = requiredEnv("KAFKA_INPUT_TOPIC"); err != nil {
 		return Config{}, err
 	}
 

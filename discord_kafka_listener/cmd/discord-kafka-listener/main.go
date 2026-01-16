@@ -49,7 +49,7 @@ func main() {
 
 	messageIDs := make(chan string, cfg.MessageBufferSize)
 
-	producer, err := kafka.NewProducer(cfg.KafkaBrokers, cfg.KafkaTopic, cfg.KafkaClientID, log)
+	producer, err := kafka.NewProducer(cfg.KafkaBrokers, cfg.KafkaInputTopic, cfg.KafkaClientID, log)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create kafka producer")
 	}

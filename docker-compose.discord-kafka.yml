@@ -37,12 +37,24 @@ services:
       - kafka
     environment:
       TZ: ${TZ}
+    env_file:
+      - .env
     entrypoint:
       - /bin/bash
       - -c
       - |
         for i in $(seq 1 30); do
-          kafka-topics --bootstrap-server ${KAFKA_BROKERS} --create --if-not-exists --topic ${KAFKA_TOPIC} --partitions ${KAFKA_PARTITIONS} --replication-factor ${KAFKA_REPLICATION_FACTOR} && exit 0
+          ok=1
+          for topic in "$$KAFKA_INPUT_TOPIC" "$$KAFKA_WEEK_TOPIC" "$$KAFKA_GAME_TOPIC"; do
+            if [ -z "$$topic" ]; then
+              ok=0
+              continue
+            fi
+            kafka-topics --bootstrap-server "$$KAFKA_BROKERS" --create --if-not-exists --topic "$$topic" --partitions "$$KAFKA_PARTITIONS" --replication-factor "$$KAFKA_REPLICATION_FACTOR" || ok=0
+          done
+          if [ "$${ok:-0}" -eq 1 ]; then
+            exit 0
+          fi
           echo "waiting for kafka..."
           sleep 2
         done
@@ -73,10 +85,55 @@ services:
     networks:
       - megagames-net
 
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      TZ: ${TZ}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_EXPOSE_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - megagames-net
+
+  discord-kafka-processor:
+    build:
+      context: .
+      dockerfile: discord_kafka_processor/Dockerfile
+      args:
+        VERSION: ${APP_VERSION}
+        TZ: ${TZ}
+    platform: ${TARGET_PLATFORM}
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ}
+    depends_on:
+      - kafka-init
+      - postgres
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - megagames-net
+
 volumes:
   kafka-data:
   zookeeper-data:
   zookeeper-log:
+  postgres-data:
 
 networks:
   megagames-net:
