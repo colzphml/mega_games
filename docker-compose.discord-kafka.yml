@@ -45,7 +45,7 @@ services:
       - |
         for i in $(seq 1 30); do
           ok=1
-          for topic in "$$KAFKA_INPUT_TOPIC" "$$KAFKA_WEEK_TOPIC" "$$KAFKA_GAME_TOPIC" "$$KAFKA_TELEGRAM_WEEK_TOPIC"; do
+          for topic in "$$KAFKA_INPUT_TOPIC" "$$KAFKA_WEEK_TOPIC" "$$KAFKA_GAME_TOPIC" "$$KAFKA_TELEGRAM_WEEK_TOPIC" "$$KAFKA_GAME_IMAGE_TOPIC"; do
             if [ -z "$$topic" ]; then
               ok=0
               continue
@@ -106,6 +106,50 @@ services:
     networks:
       - megagames-net
 
+  mongo:
+    image: mongo:7
+    environment:
+      TZ: ${TZ}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    ports:
+      - "${MONGO_EXPOSE_PORT:-27017}:27017"
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - megagames-net
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      TZ: ${TZ}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    ports:
+      - "${MINIO_EXPOSE_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - megagames-net
+
+  selenium-chrome:
+    image: selenium/standalone-chrome:latest
+    profiles:
+      - selenium
+    shm_size: 2gb
+    volumes:
+      - selenium-downloads:/home/seluser/Downloads
+    networks:
+      - megagames-net
+
   discord-kafka-processor:
     build:
       context: .
@@ -158,11 +202,44 @@ services:
     networks:
       - megagames-net
 
+  discord-kafka-game-image:
+    build:
+      context: .
+      dockerfile: discord_kafka_game_image/Dockerfile
+      args:
+        VERSION: ${APP_VERSION}
+        TZ: ${TZ}
+    platform: ${TARGET_PLATFORM}
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - selenium-downloads:/home/seluser/Downloads
+    networks:
+      - megagames-net
+
 volumes:
   kafka-data:
   zookeeper-data:
   zookeeper-log:
   postgres-data:
+  mongo-data:
+  minio-data:
+  selenium-downloads:
 
 networks:
   megagames-net:
