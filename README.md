@@ -52,20 +52,21 @@ COMPOSE_PROFILES=selenium docker compose up -d
 Пример установки:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.1/scripts/install.sh \
-  | TAG=v3.0.1 INSTALL_DIR=/opt/mega_games bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.2/scripts/install.sh \
+  | TAG=v3.0.2 INSTALL_DIR=/opt/mega_games bash
 ```
 
 Если интерактивный режим не нужен:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.1/scripts/install.sh \
-  | TAG=v3.0.1 INSTALL_DIR=/opt/mega_games NONINTERACTIVE=1 bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.2/scripts/install.sh \
+  | TAG=v3.0.2 INSTALL_DIR=/opt/mega_games NONINTERACTIVE=1 bash
 ```
 
 Примечания:
 - поддерживаются Linux/macOS на `amd64` и `arm64` (Raspberry Pi — только 64‑битные ОС);
 - интерактив можно пропустить через `NONINTERACTIVE=1` (или предварительно создав `.env` в `INSTALL_DIR`).
+- скрипт автоматически выставляет `TARGET_PLATFORM` и `APP_VERSION`.
 
 ## Релизы
 
@@ -74,14 +75,14 @@ curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.1/scripts/
 Минимальные шаги:
 
 ```
-git tag -a v3.0.1 -m "Release 3.0.1"
-git push origin v3.0.1
+git tag -a v3.0.2 -m "Release 3.0.2"
+git push origin v3.0.2
 ```
 
 Если используешь GitHub CLI:
 
 ```
-gh release create v3.0.1 --title "3.0.1" --notes "Mega Games bot release 3.0.1"
+gh release create v3.0.2 --title "3.0.2" --notes "Mega Games bot release 3.0.2"
 ```
 
 ## Полезные команды

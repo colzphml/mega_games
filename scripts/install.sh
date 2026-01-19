@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/colzphml/mega_games.git"
-DEFAULT_TAG="v3.0.1"
+DEFAULT_TAG="v3.0.2"
 DEFAULT_INSTALL_DIR="/opt/mega_games"
 
 TAG="${TAG:-$DEFAULT_TAG}"
@@ -230,8 +230,10 @@ if [[ "$NONINTERACTIVE" != "1" ]] && confirm "Configure .env interactively now?"
   fi
 fi
 
-set_env_if_empty "TARGET_PLATFORM" "linux/${ARCH}" "$ENV_FILE"
-set_env_if_empty "APP_VERSION" "${TAG#v}" "$ENV_FILE"
+TARGET_PLATFORM_VALUE="${TARGET_PLATFORM:-linux/${ARCH}}"
+APP_VERSION_VALUE="${APP_VERSION:-${TAG#v}}"
+set_env "TARGET_PLATFORM" "$TARGET_PLATFORM_VALUE" "$ENV_FILE"
+set_env "APP_VERSION" "$APP_VERSION_VALUE" "$ENV_FILE"
 
 log "Starting services..."
 cd "$INSTALL_DIR"
