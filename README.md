@@ -52,15 +52,15 @@ COMPOSE_PROFILES=selenium docker compose up -d
 Пример установки:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.0/scripts/install.sh \
-  | TAG=v3.0.0 INSTALL_DIR=/opt/mega_games bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.1/scripts/install.sh \
+  | TAG=v3.0.1 INSTALL_DIR=/opt/mega_games bash
 ```
 
 Если интерактивный режим не нужен:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.0/scripts/install.sh \
-  | TAG=v3.0.0 INSTALL_DIR=/opt/mega_games NONINTERACTIVE=1 bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.1/scripts/install.sh \
+  | TAG=v3.0.1 INSTALL_DIR=/opt/mega_games NONINTERACTIVE=1 bash
 ```
 
 Примечания:
@@ -74,14 +74,14 @@ curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.0/scripts/
 Минимальные шаги:
 
 ```
-git tag -a v3.0.0 -m "Release 3.0.0"
-git push origin v3.0.0
+git tag -a v3.0.1 -m "Release 3.0.1"
+git push origin v3.0.1
 ```
 
 Если используешь GitHub CLI:
 
 ```
-gh release create v3.0.0 --title "3.0.0" --notes "Mega Games bot release 3.0.0"
+gh release create v3.0.1 --title "3.0.1" --notes "Mega Games bot release 3.0.1"
 ```
 
 ## Полезные команды

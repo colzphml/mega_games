@@ -2,12 +2,17 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/colzphml/mega_games.git"
-DEFAULT_TAG="v3.0.0"
+DEFAULT_TAG="v3.0.1"
 DEFAULT_INSTALL_DIR="/opt/mega_games"
 
 TAG="${TAG:-$DEFAULT_TAG}"
 INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
 NONINTERACTIVE="${NONINTERACTIVE:-0}"
+PROMPT_INPUT=""
+
+if [[ -r /dev/tty ]]; then
+  PROMPT_INPUT="/dev/tty"
+fi
 
 log() {
   printf '%s\n' "$*"
@@ -34,7 +39,11 @@ confirm() {
   else
     prompt="$prompt [y/N]"
   fi
-  read -r -p "$prompt " reply
+  if [[ -n "$PROMPT_INPUT" ]]; then
+    read -r -p "$prompt " reply < "$PROMPT_INPUT" || true
+  else
+    read -r -p "$prompt " reply || true
+  fi
   case "$reply" in
     [Yy]*) return 0 ;;
     [Nn]*) return 1 ;;
@@ -172,22 +181,46 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 if [[ "$NONINTERACTIVE" != "1" ]] && confirm "Configure .env interactively now?" "Y"; then
-  read -r -p "DISCORD_TOKEN (leave empty to skip): " v
+  if [[ -n "$PROMPT_INPUT" ]]; then
+    read -r -p "DISCORD_TOKEN (leave empty to skip): " v < "$PROMPT_INPUT" || true
+  else
+    read -r -p "DISCORD_TOKEN (leave empty to skip): " v || true
+  fi
   [[ -n "$v" ]] && set_env "DISCORD_TOKEN" "$v" "$ENV_FILE"
 
-  read -r -p "DISCORD_CHANNEL_ID (leave empty to skip): " v
+  if [[ -n "$PROMPT_INPUT" ]]; then
+    read -r -p "DISCORD_CHANNEL_ID (leave empty to skip): " v < "$PROMPT_INPUT" || true
+  else
+    read -r -p "DISCORD_CHANNEL_ID (leave empty to skip): " v || true
+  fi
   [[ -n "$v" ]] && set_env "DISCORD_CHANNEL_ID" "$v" "$ENV_FILE"
 
-  read -r -p "TELEGRAM_BOT_TOKEN (leave empty to skip): " v
+  if [[ -n "$PROMPT_INPUT" ]]; then
+    read -r -p "TELEGRAM_BOT_TOKEN (leave empty to skip): " v < "$PROMPT_INPUT" || true
+  else
+    read -r -p "TELEGRAM_BOT_TOKEN (leave empty to skip): " v || true
+  fi
   [[ -n "$v" ]] && set_env "TELEGRAM_BOT_TOKEN" "$v" "$ENV_FILE"
 
-  read -r -p "TELEGRAM_WEEK_CHAT_ID (leave empty to skip): " v
+  if [[ -n "$PROMPT_INPUT" ]]; then
+    read -r -p "TELEGRAM_WEEK_CHAT_ID (leave empty to skip): " v < "$PROMPT_INPUT" || true
+  else
+    read -r -p "TELEGRAM_WEEK_CHAT_ID (leave empty to skip): " v || true
+  fi
   [[ -n "$v" ]] && set_env "TELEGRAM_WEEK_CHAT_ID" "$v" "$ENV_FILE"
 
-  read -r -p "TELEGRAM_GAME_CHAT_ID (leave empty to skip): " v
+  if [[ -n "$PROMPT_INPUT" ]]; then
+    read -r -p "TELEGRAM_GAME_CHAT_ID (leave empty to skip): " v < "$PROMPT_INPUT" || true
+  else
+    read -r -p "TELEGRAM_GAME_CHAT_ID (leave empty to skip): " v || true
+  fi
   [[ -n "$v" ]] && set_env "TELEGRAM_GAME_CHAT_ID" "$v" "$ENV_FILE"
 
-  read -r -p "GAME_IMAGE_FETCHER_TYPE (headless|gochrome|selenium) [headless]: " v
+  if [[ -n "$PROMPT_INPUT" ]]; then
+    read -r -p "GAME_IMAGE_FETCHER_TYPE (headless|gochrome|selenium) [headless]: " v < "$PROMPT_INPUT" || true
+  else
+    read -r -p "GAME_IMAGE_FETCHER_TYPE (headless|gochrome|selenium) [headless]: " v || true
+  fi
   if [[ -n "$v" ]]; then
     set_env "GAME_IMAGE_FETCHER_TYPE" "$v" "$ENV_FILE"
   fi
