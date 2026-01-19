@@ -40,6 +40,50 @@ docker compose up -d
 COMPOSE_PROFILES=selenium docker compose up -d
 ```
 
+## Установка через curl
+
+Скрипт установки умеет:
+- проверить зависимости (docker, compose, curl);
+- скачать нужный релиз;
+- создать `.env` из `.env.example`;
+- при желании задать базовые параметры интерактивно;
+- запустить `docker compose up -d --build`.
+
+Пример установки:
+
+```
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.0/scripts/install.sh \
+  | TAG=v3.0.0 INSTALL_DIR=/opt/mega_games bash
+```
+
+Если интерактивный режим не нужен:
+
+```
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.0/scripts/install.sh \
+  | TAG=v3.0.0 INSTALL_DIR=/opt/mega_games NONINTERACTIVE=1 bash
+```
+
+Примечания:
+- поддерживаются Linux/macOS на `amd64` и `arm64` (Raspberry Pi — только 64‑битные ОС);
+- интерактив можно пропустить через `NONINTERACTIVE=1` (или предварительно создав `.env` в `INSTALL_DIR`).
+
+## Релизы
+
+Релиз — это git‑тег `vX.Y.Z` и (опционально) Release на GitHub.
+
+Минимальные шаги:
+
+```
+git tag -a v3.0.0 -m "Release 3.0.0"
+git push origin v3.0.0
+```
+
+Если используешь GitHub CLI:
+
+```
+gh release create v3.0.0 --title "3.0.0" --notes "Mega Games bot release 3.0.0"
+```
+
 ## Полезные команды
 
 Посмотреть логи сервиса:
