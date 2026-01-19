@@ -52,6 +52,9 @@ func seasonTitle(season string) string {
 	if season == "preseason" {
 		return "Pre Season"
 	}
+	if season == "postseason" {
+		return "Post Season"
+	}
 	return "Regular Season"
 }
 

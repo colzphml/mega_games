@@ -85,6 +85,8 @@ func parseWeek(title string) (*WeekUpdate, bool) {
 		season = "regular"
 	} else if strings.Contains(title, "Pre Season") {
 		season = "preseason"
+	} else if strings.Contains(title, "Post Season") {
+		season = "postseason"
 	} else {
 		return nil, false
 	}

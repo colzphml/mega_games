@@ -15,6 +15,11 @@ const (
 	defaultKafkaReadTimeout      = 10 * time.Second
 	defaultHealthAddr            = ":8080"
 	defaultTimezone              = "Europe/Moscow"
+	defaultPostgresPort          = 5432
+	defaultPostgresSSLMode       = "disable"
+	defaultPostgresTimeout       = 5 * time.Second
+	defaultPostgresRetryDelay    = 2 * time.Second
+	defaultPostgresMaxAttempts   = 30
 	defaultMongoConnectTimeout   = 5 * time.Second
 	defaultMongoRetryDelay       = 2 * time.Second
 	defaultMongoMaxAttempts      = 30
@@ -30,7 +35,7 @@ const (
 	defaultMinioMaxAttempts      = 30
 	defaultMinioUploadTimeout    = 30 * time.Second
 	defaultFetchTimeout          = 2 * time.Minute
-	defaultSeleniumDownloadDir   = "/selenium-downloads"
+	defaultSeleniumDownloadDir   = "/home/seluser/Downloads"
 	defaultGoChromeHeadless      = true
 	defaultMinioObjectPrefix     = "game-recaps"
 	defaultMongoCollection       = "game_images"
@@ -45,6 +50,16 @@ type Config struct {
 	KafkaClientID      string
 	KafkaWriteTimeout  time.Duration
 	KafkaReadTimeout   time.Duration
+
+	PostgresHost        string
+	PostgresPort        int
+	PostgresUser        string
+	PostgresPass        string
+	PostgresDB          string
+	PostgresSSLMode     string
+	PostgresTimeout     time.Duration
+	PostgresRetryDelay  time.Duration
+	PostgresMaxAttempts int
 
 	MongoURI              string
 	MongoDB               string
@@ -105,6 +120,32 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.KafkaReadTimeout, err = durationEnv("KAFKA_READ_TIMEOUT", defaultKafkaReadTimeout); err != nil {
+		return Config{}, err
+	}
+
+	if cfg.PostgresHost, err = requiredEnv("POSTGRES_HOST"); err != nil {
+		return Config{}, err
+	}
+	if cfg.PostgresUser, err = requiredEnv("POSTGRES_USER"); err != nil {
+		return Config{}, err
+	}
+	if cfg.PostgresPass, err = requiredEnv("POSTGRES_PASSWORD"); err != nil {
+		return Config{}, err
+	}
+	if cfg.PostgresDB, err = requiredEnv("POSTGRES_DB"); err != nil {
+		return Config{}, err
+	}
+	if cfg.PostgresPort, err = intEnv("POSTGRES_PORT", defaultPostgresPort); err != nil {
+		return Config{}, err
+	}
+	cfg.PostgresSSLMode = optionalEnv("POSTGRES_SSLMODE", defaultPostgresSSLMode)
+	if cfg.PostgresTimeout, err = durationEnv("POSTGRES_CONNECT_TIMEOUT", defaultPostgresTimeout); err != nil {
+		return Config{}, err
+	}
+	if cfg.PostgresRetryDelay, err = durationEnv("POSTGRES_CONNECT_RETRY_DELAY", defaultPostgresRetryDelay); err != nil {
+		return Config{}, err
+	}
+	if cfg.PostgresMaxAttempts, err = intEnv("POSTGRES_CONNECT_MAX_ATTEMPTS", defaultPostgresMaxAttempts); err != nil {
 		return Config{}, err
 	}
 
@@ -183,6 +224,10 @@ func Load() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func (c Config) PostgresDSN() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s", c.PostgresUser, c.PostgresPass, c.PostgresHost, c.PostgresPort, c.PostgresDB, c.PostgresSSLMode)
 }
 
 func requiredEnv(key string) (string, error) {

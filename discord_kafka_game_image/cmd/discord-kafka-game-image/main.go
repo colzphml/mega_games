@@ -16,6 +16,7 @@ import (
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/config"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/kafka"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/middle"
+	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/pgstore"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/processor"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/storage"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/store"
@@ -69,6 +70,19 @@ func main() {
 		log.Fatal().Err(err).Msg("mongo not ready")
 	}
 
+	pgStore, err := pgstore.New(ctx, cfg.PostgresDSN(), log)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to connect to postgres")
+	}
+	defer pgStore.Close()
+
+	if err := waitForPostgres(ctx, pgStore, cfg, log); err != nil {
+		log.Fatal().Err(err).Msg("postgres not ready")
+	}
+	if err := pgStore.EnsureSchema(ctx); err != nil {
+		log.Fatal().Err(err).Msg("failed to ensure postgres schema")
+	}
+
 	objectStore, err := waitForMinio(ctx, cfg, log)
 	if err != nil {
 		log.Fatal().Err(err).Msg("minio not ready")
@@ -101,27 +115,31 @@ func main() {
 		}
 	}()
 
-	healthServer := startHealthServer(ctx, cfg.HealthAddr, storeClient, objectStore, cfg.KafkaBrokers, log)
+	healthServer := startHealthServer(ctx, cfg.HealthAddr, storeClient, pgStore, objectStore, cfg.KafkaBrokers, log)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = healthServer.Shutdown(shutdownCtx)
 	}()
 
-	proc := processor.New(cfg, storeClient, reader, producer, fetcher, objectStore, log)
+	proc := processor.New(cfg, storeClient, pgStore, reader, producer, fetcher, objectStore, log)
 	log.Info().Str("topic", cfg.KafkaGameTopic).Str("group", cfg.KafkaConsumerGroup).Msg("game image consumer started")
 	if err := proc.Run(ctx); err != nil {
 		log.Fatal().Err(err).Msg("processor stopped with error")
 	}
 }
 
-func startHealthServer(ctx context.Context, addr string, storeClient *store.Store, objectStore *storage.Client, brokers []string, log zerolog.Logger) *http.Server {
+func startHealthServer(ctx context.Context, addr string, storeClient *store.Store, pgStore *pgstore.Store, objectStore *storage.Client, brokers []string, log zerolog.Logger) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		pingCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if err := storeClient.Ping(pingCtx); err != nil {
 			http.Error(w, "mongo not healthy", http.StatusServiceUnavailable)
+			return
+		}
+		if err := pgStore.Ping(pingCtx); err != nil {
+			http.Error(w, "postgres not healthy", http.StatusServiceUnavailable)
 			return
 		}
 		if err := objectStore.Ping(pingCtx); err != nil {
@@ -187,6 +205,25 @@ func waitForMongo(ctx context.Context, storeClient *store.Store, cfg config.Conf
 		}
 		log.Warn().Err(err).Int("attempt", attempt).Int("max_attempts", cfg.MongoMaxAttempts).Msg("mongo not ready, retrying")
 		if !sleepWithContext(ctx, cfg.MongoRetryDelay) {
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+func waitForPostgres(ctx context.Context, pgStore *pgstore.Store, cfg config.Config, log zerolog.Logger) error {
+	for attempt := 1; attempt <= cfg.PostgresMaxAttempts; attempt++ {
+		pingCtx, cancel := context.WithTimeout(ctx, cfg.PostgresTimeout)
+		err := pgStore.Ping(pingCtx)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		if attempt == cfg.PostgresMaxAttempts {
+			return err
+		}
+		log.Warn().Err(err).Int("attempt", attempt).Int("max_attempts", cfg.PostgresMaxAttempts).Msg("postgres not ready, retrying")
+		if !sleepWithContext(ctx, cfg.PostgresRetryDelay) {
 			return ctx.Err()
 		}
 	}
