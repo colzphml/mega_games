@@ -9,11 +9,18 @@ import (
 )
 
 func BuildWeekMessage(payload store.WeekPayload, teams map[string]store.Team, games []store.Game) (string, error) {
-	if payload.Season == "" || payload.Week == 0 {
+	if payload.Season == "" {
 		return "", fmt.Errorf("invalid week payload")
 	}
 
-	title := fmt.Sprintf("MEGA has advanced to %s Week %d", seasonTitle(payload.Season), payload.Week)
+	title := ""
+	if payload.Week > 0 {
+		title = fmt.Sprintf("MEGA has advanced to %s Week %d", seasonTitle(payload.Season), payload.Week)
+	} else if payload.Title != "" {
+		title = payload.Title
+	} else {
+		return "", fmt.Errorf("invalid week payload")
+	}
 	var textBuilder strings.Builder
 	textBuilder.WriteString(fmt.Sprintf("*%s*\n", title))
 

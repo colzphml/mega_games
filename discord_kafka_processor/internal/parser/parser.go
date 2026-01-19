@@ -12,11 +12,13 @@ import (
 var (
 	gameNumberRe = regexp.MustCompile(`(?i)game\s*([0-9]+)`) // e.g. Game 12
 	gameURLRe    = regexp.MustCompile(`(?i)MEGA/games/(\d+)`)
+	weekNumberRe = regexp.MustCompile(`\d+`)
 )
 
 type WeekUpdate struct {
 	Season string `json:"season"`
 	Week   int    `json:"week"`
+	Title  string `json:"title,omitempty"`
 }
 
 type Result struct {
@@ -91,16 +93,14 @@ func parseWeek(title string) (*WeekUpdate, bool) {
 		return nil, false
 	}
 
-	words := strings.Fields(title)
-	if len(words) == 0 {
-		return nil, false
-	}
-	week, err := strconv.Atoi(words[len(words)-1])
-	if err != nil {
-		return nil, false
+	week := 0
+	for _, match := range weekNumberRe.FindAllString(title, -1) {
+		if parsed, err := strconv.Atoi(match); err == nil {
+			week = parsed
+		}
 	}
 
-	return &WeekUpdate{Season: season, Week: week}, true
+	return &WeekUpdate{Season: season, Week: week, Title: strings.TrimSpace(title)}, true
 }
 
 func extractGameNumbers(values ...string) []string {

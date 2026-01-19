@@ -352,8 +352,11 @@ func decodePayload(value []byte) (store.WeekPayload, error) {
 	if err := json.Unmarshal(value, &payload); err != nil {
 		return store.WeekPayload{}, err
 	}
-	if payload.Season == "" || payload.Week == 0 {
-		return store.WeekPayload{}, fmt.Errorf("missing season or week")
+	if payload.Season == "" {
+		return store.WeekPayload{}, fmt.Errorf("missing season")
+	}
+	if payload.Week == 0 && payload.Title == "" {
+		return store.WeekPayload{}, fmt.Errorf("missing week or title")
 	}
 	return payload, nil
 }

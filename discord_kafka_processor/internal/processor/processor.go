@@ -178,7 +178,13 @@ func (p *Processor) handleMessage(ctx context.Context, messageID string) error {
 		if err != nil {
 			return err
 		}
-		p.log.Info().Str("message_id", messageID).Str("season", result.Week.Season).Int("week", result.Week.Week).Msg("week update sent")
+		event := p.log.Info().Str("message_id", messageID).Str("season", result.Week.Season)
+		if result.Week.Week > 0 {
+			event = event.Int("week", result.Week.Week)
+		} else if result.Week.Title != "" {
+			event = event.Str("title", result.Week.Title)
+		}
+		event.Msg("week update sent")
 	}
 
 	for _, game := range result.Games {

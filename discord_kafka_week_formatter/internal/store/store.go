@@ -19,6 +19,7 @@ const (
 type WeekPayload struct {
 	Season string `json:"season"`
 	Week   int    `json:"week"`
+	Title  string `json:"title,omitempty"`
 }
 
 type WeekMessage struct {
@@ -241,7 +242,7 @@ func (s *Store) LoadTeams(ctx context.Context) (map[string]Team, error) {
 
 func (s *Store) LoadGamesForWeek(ctx context.Context, season string, week int) ([]Game, error) {
 	if week < 1 {
-		return nil, fmt.Errorf("invalid week: %d", week)
+		return nil, nil
 	}
 	if season == "preseason" && week == 4 {
 		return nil, nil
