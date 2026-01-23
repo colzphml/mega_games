@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: "mega_games"
+    orgId: 1
+    folder: "Mega Games"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
