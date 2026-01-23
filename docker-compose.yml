@@ -1,10 +1,19 @@
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
+    restart: unless-stopped
     environment:
       TZ: ${TZ}
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    labels:
+      - autoheal=true
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
       - zookeeper-log:/var/lib/zookeeper/log
@@ -13,8 +22,10 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.6.1
+    restart: unless-stopped
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
     environment:
@@ -26,6 +37,14 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    labels:
+      - autoheal=true
     volumes:
       - kafka-data:/var/lib/kafka/data
     networks:
@@ -33,8 +52,10 @@ services:
 
   kafka-init:
     image: confluentinc/cp-kafka:7.6.1
+    restart: on-failure
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     environment:
       TZ: ${TZ}
     env_file:
@@ -70,6 +91,7 @@ services:
         VERSION: ${APP_VERSION}
         TZ: ${TZ}
     platform: ${TARGET_PLATFORM}
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -83,11 +105,16 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    labels:
+      - autoheal=true
+    volumes:
+      - listener-state:/var/lib/discord-listener
     networks:
       - megagames-net
 
   postgres:
     image: postgres:16.4-alpine
+    restart: unless-stopped
     environment:
       TZ: ${TZ}
       POSTGRES_DB: ${POSTGRES_DB}
@@ -101,6 +128,8 @@ services:
       timeout: 3s
       retries: 10
       start_period: 5s
+    labels:
+      - autoheal=true
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -108,6 +137,7 @@ services:
 
   mongo:
     image: mongo:7
+    restart: unless-stopped
     environment:
       TZ: ${TZ}
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
@@ -120,6 +150,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 5s
+    labels:
+      - autoheal=true
     volumes:
       - mongo-data:/data/db
     networks:
@@ -127,6 +159,7 @@ services:
 
   minio:
     image: minio/minio:latest
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       TZ: ${TZ}
@@ -142,6 +175,7 @@ services:
 
   selenium-chrome:
     image: selenium/standalone-chrome:latest
+    restart: unless-stopped
     profiles:
       - selenium
     shm_size: 2gb
@@ -158,6 +192,7 @@ services:
         VERSION: ${APP_VERSION}
         TZ: ${TZ}
     platform: ${TARGET_PLATFORM}
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -173,6 +208,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    labels:
+      - autoheal=true
     networks:
       - megagames-net
 
@@ -184,6 +221,7 @@ services:
         VERSION: ${APP_VERSION}
         TZ: ${TZ}
     platform: ${TARGET_PLATFORM}
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -199,6 +237,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    labels:
+      - autoheal=true
     networks:
       - megagames-net
 
@@ -210,6 +250,7 @@ services:
         VERSION: ${APP_VERSION}
         TZ: ${TZ}
     platform: ${TARGET_PLATFORM}
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -229,6 +270,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    labels:
+      - autoheal=true
     volumes:
       - selenium-downloads:/home/seluser/Downloads
     networks:
@@ -242,6 +285,7 @@ services:
         VERSION: ${APP_VERSION}
         TZ: ${TZ}
     platform: ${TARGET_PLATFORM}
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -257,6 +301,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    labels:
+      - autoheal=true
     networks:
       - megagames-net
 
@@ -268,6 +314,7 @@ services:
         VERSION: ${APP_VERSION}
         TZ: ${TZ}
     platform: ${TARGET_PLATFORM}
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -285,6 +332,18 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    labels:
+      - autoheal=true
+    networks:
+      - megagames-net
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - megagames-net
 
@@ -292,6 +351,7 @@ volumes:
   kafka-data:
   zookeeper-data:
   zookeeper-log:
+  listener-state:
   postgres-data:
   mongo-data:
   minio-data:

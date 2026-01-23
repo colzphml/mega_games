@@ -12,6 +12,7 @@ import (
 	"github.com/colzphml/mega_games/discord_kafka_listener/internal/config"
 	"github.com/colzphml/mega_games/discord_kafka_listener/internal/discord"
 	"github.com/colzphml/mega_games/discord_kafka_listener/internal/kafka"
+	"github.com/colzphml/mega_games/discord_kafka_listener/internal/state"
 	"github.com/rs/zerolog"
 )
 
@@ -55,7 +56,18 @@ func main() {
 	}
 	defer producer.Close()
 
-	discordClient, err := discord.NewClient(cfg.DiscordToken, cfg.DiscordChannelID, messageIDs, log)
+	store := state.NewLastMessageStore(cfg.LastMessageIDPath, log)
+
+	bufferedWriter := kafka.NewBufferedWriter(producer, kafka.BufferedWriterConfig{
+		WriteTimeout: cfg.KafkaWriteTimeout,
+		BaseDelay:    cfg.KafkaRetryBaseDelay,
+		MaxDelay:     cfg.KafkaRetryMaxDelay,
+		MaxAttempts:  cfg.KafkaRetryMaxAttempts,
+		MaxPending:   cfg.KafkaRetryMaxPending,
+		BufferSize:   cfg.MessageBufferSize,
+	}, log)
+
+	discordClient, err := discord.NewClient(cfg.DiscordToken, cfg.DiscordChannelID, messageIDs, cfg.MessageEnqueueTimeout, log)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create discord client")
 	}
@@ -82,6 +94,64 @@ func main() {
 
 	log.Info().Str("addr", cfg.HealthAddr).Msg("health server listening")
 
+	var backfillMu sync.Mutex
+	backfillInProgress := false
+	lastBackfill := time.Time{}
+
+	triggerBackfill := func(reason discord.EventType) {
+		if cfg.BackfillMaxMessages == 0 {
+			return
+		}
+		lastID := store.Get()
+		if lastID == "" {
+			return
+		}
+		backfillMu.Lock()
+		if backfillInProgress {
+			backfillMu.Unlock()
+			return
+		}
+		if !lastBackfill.IsZero() && time.Since(lastBackfill) < cfg.BackfillMinInterval {
+			backfillMu.Unlock()
+			return
+		}
+		backfillInProgress = true
+		lastBackfill = time.Now()
+		backfillMu.Unlock()
+
+		go func() {
+			defer func() {
+				backfillMu.Lock()
+				backfillInProgress = false
+				backfillMu.Unlock()
+			}()
+			backfillCtx, cancel := context.WithTimeout(ctx, cfg.BackfillTimeout)
+			defer cancel()
+			count, err := discordClient.BackfillSince(backfillCtx, lastID, cfg.BackfillPageSize, cfg.BackfillMaxMessages)
+			if err != nil {
+				log.Warn().Err(err).Str("reason", string(reason)).Msg("discord backfill failed")
+				return
+			}
+			if count > 0 {
+				log.Info().Str("reason", string(reason)).Int("count", count).Msg("discord backfill completed")
+			}
+		}()
+	}
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev := <-discordClient.Events():
+				switch ev.Type {
+				case discord.EventReady, discord.EventResumed:
+					triggerBackfill(ev.Type)
+				}
+			}
+		}
+	}()
+
 	go func() {
 		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("health server stopped")
@@ -98,7 +168,15 @@ func main() {
 	}()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		bufferedWriter.Run(ctx, func(messageID string) {
+			store.UpdateIfNewer(messageID)
+			log.Info().Str("message_id", messageID).Msg("sent message id to kafka")
+		})
+	}()
+
 	go func() {
 		defer wg.Done()
 		for {
@@ -106,14 +184,9 @@ func main() {
 			case <-ctx.Done():
 				return
 			case messageID := <-messageIDs:
-				writeCtx, cancel := context.WithTimeout(ctx, cfg.KafkaWriteTimeout)
-				err := producer.WriteMessage(writeCtx, messageID)
-				cancel()
-				if err != nil {
-					log.Error().Err(err).Str("message_id", messageID).Msg("failed to write to kafka")
-					continue
+				if ok := bufferedWriter.Enqueue(ctx, messageID, cfg.MessageEnqueueTimeout); !ok {
+					log.Warn().Str("message_id", messageID).Msg("retry queue full, dropping")
 				}
-				log.Info().Str("message_id", messageID).Msg("sent message id to kafka")
 			}
 		}
 	}()
