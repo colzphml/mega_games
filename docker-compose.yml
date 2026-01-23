@@ -136,7 +136,7 @@ services:
       - megagames-net
 
   mongo:
-    image: mongo:7
+    image: ${MONGO_IMAGE:-mongo:7}
     restart: unless-stopped
     environment:
       TZ: ${TZ}
