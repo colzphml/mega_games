@@ -23,6 +23,9 @@
 - `discord_kafka_telegram_game_sender` — отправляет игровые картинки в Telegram, трекает статус в Postgres.
 - `discord_tools` — утилиты (дамп Discord‑сообщений и генерация SQL из CSV).
 - `autoheal` — перезапускает контейнеры со статусом `unhealthy`.
+- `loki` — хранение логов.
+- `promtail` — сбор логов контейнеров и отправка в Loki.
+- `grafana` — дашборды и поиск логов.
 
 ## Быстрый старт
 
@@ -53,15 +56,15 @@ COMPOSE_PROFILES=selenium docker compose up -d
 Пример установки:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.4/scripts/install.sh \
-  | TAG=v3.0.4 INSTALL_DIR=/opt/mega_games bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.0.0/scripts/install.sh \
+  | TAG=v4.0.0 INSTALL_DIR=/opt/mega_games bash
 ```
 
 Если интерактивный режим не нужен:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.4/scripts/install.sh \
-  | TAG=v3.0.4 INSTALL_DIR=/opt/mega_games NONINTERACTIVE=1 bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.0.0/scripts/install.sh \
+  | TAG=v4.0.0 INSTALL_DIR=/opt/mega_games NONINTERACTIVE=1 bash
 ```
 
 Примечания:
@@ -76,14 +79,14 @@ curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.4/scripts/
 Минимальные шаги:
 
 ```
-git tag -a v3.0.4 -m "Release 3.0.4"
-git push origin v3.0.4
+git tag -a v4.0.0 -m "Release 4.0.0"
+git push origin v4.0.0
 ```
 
 Если используешь GitHub CLI:
 
 ```
-gh release create v3.0.4 --title "3.0.4" --notes "Mega Games bot release 3.0.4"
+gh release create v4.0.0 --title "4.0.0" --notes "Mega Games bot release 4.0.0"
 ```
 
 ## Полезные команды
@@ -102,6 +105,15 @@ docker compose exec <service> wget -qO- http://127.0.0.1:8080/health
 ```
 docker compose exec kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic <topic> --from-beginning
 ```
+
+## Мониторинг (Grafana + Loki)
+
+Grafana доступна на `http://localhost:3000` (по умолчанию `admin/admin`).
+Loki доступен на `http://localhost:3100`.
+
+Источники логов:
+- `promtail` читает логи Docker из `/var/lib/docker/containers` (требуется Linux хост).
+- В Grafana источник Loki уже провижинен, можно сразу искать логи по лейблу `job="docker"`.
 
 ## Траблшутинг
 
