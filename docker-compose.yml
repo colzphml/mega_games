@@ -91,6 +91,7 @@ services:
         VERSION: ${APP_VERSION}
         TZ: ${TZ}
     platform: ${TARGET_PLATFORM}
+    user: "${DISCORD_LISTENER_USER:-0:0}"
     restart: unless-stopped
     env_file:
       - .env
