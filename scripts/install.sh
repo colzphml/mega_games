@@ -231,9 +231,7 @@ if [[ "$NONINTERACTIVE" != "1" ]] && confirm "Configure .env interactively now?"
 fi
 
 TARGET_PLATFORM_VALUE="${TARGET_PLATFORM:-linux/${ARCH}}"
-APP_VERSION_VALUE="${APP_VERSION:-${TAG#v}}"
 set_env "TARGET_PLATFORM" "$TARGET_PLATFORM_VALUE" "$ENV_FILE"
-set_env "APP_VERSION" "$APP_VERSION_VALUE" "$ENV_FILE"
 
 log "Starting services..."
 cd "$INSTALL_DIR"

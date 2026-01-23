@@ -70,7 +70,8 @@ curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.0.0/scripts/
 Примечания:
 - поддерживаются Linux/macOS на `amd64` и `arm64` (Raspberry Pi — только 64‑битные ОС);
 - интерактив можно пропустить через `NONINTERACTIVE=1` (или предварительно создав `.env` в `INSTALL_DIR`).
-- скрипт автоматически выставляет `TARGET_PLATFORM` и `APP_VERSION`.
+- скрипт автоматически выставляет `TARGET_PLATFORM`.
+  Версия приложения берется из git-тега (git describe) во время сборки.
 
 ## Релизы
 
