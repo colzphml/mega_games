@@ -22,6 +22,7 @@
 - `discord_kafka_telegram_week_sender` — отправляет недельные сообщения в Telegram, трекает статус в Postgres.
 - `discord_kafka_telegram_game_sender` — отправляет игровые картинки в Telegram, трекает статус в Postgres.
 - `discord_tools` — утилиты (дамп Discord‑сообщений и генерация SQL из CSV).
+- `autoheal` — перезапускает контейнеры со статусом `unhealthy`.
 
 ## Быстрый старт
 
@@ -52,15 +53,15 @@ COMPOSE_PROFILES=selenium docker compose up -d
 Пример установки:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.3/scripts/install.sh \
-  | TAG=v3.0.3 INSTALL_DIR=/opt/mega_games bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.4/scripts/install.sh \
+  | TAG=v3.0.4 INSTALL_DIR=/opt/mega_games bash
 ```
 
 Если интерактивный режим не нужен:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.3/scripts/install.sh \
-  | TAG=v3.0.3 INSTALL_DIR=/opt/mega_games NONINTERACTIVE=1 bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.4/scripts/install.sh \
+  | TAG=v3.0.4 INSTALL_DIR=/opt/mega_games NONINTERACTIVE=1 bash
 ```
 
 Примечания:
@@ -75,14 +76,14 @@ curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v3.0.3/scripts/
 Минимальные шаги:
 
 ```
-git tag -a v3.0.3 -m "Release 3.0.3"
-git push origin v3.0.3
+git tag -a v3.0.4 -m "Release 3.0.4"
+git push origin v3.0.4
 ```
 
 Если используешь GitHub CLI:
 
 ```
-gh release create v3.0.3 --title "3.0.3" --notes "Mega Games bot release 3.0.3"
+gh release create v3.0.4 --title "3.0.4" --notes "Mega Games bot release 3.0.4"
 ```
 
 ## Полезные команды
