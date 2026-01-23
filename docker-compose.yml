@@ -145,7 +145,7 @@ services:
     ports:
       - "${MONGO_EXPOSE_PORT:-27017}:27017"
     healthcheck:
-      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"]
+      test: ["CMD", "bash", "-c", "if command -v mongosh >/dev/null 2>&1; then mongosh --quiet --eval 'db.runCommand({ ping: 1 })'; else mongo --quiet --eval 'db.runCommand({ ping: 1 })'; fi"]
       interval: 5s
       timeout: 5s
       retries: 10
