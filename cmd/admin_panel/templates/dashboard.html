@@ -1,0 +1,30 @@
+{{define "content"}}
+<h2>System Status</h2>
+<div class="grid">
+    {{range $service, $statuses := .}}
+    <article>
+        <header><strong>{{$service}}</strong></header>
+        {{if $statuses}}
+        <table role="grid">
+            <thead>
+                <tr>
+                    <th scope="col">Status</th>
+                    <th scope="col">Count</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range $status, $count := $statuses}}
+                <tr>
+                    <td>{{$status}}</td>
+                    <td>{{$count}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{else}}
+        <p>No data available.</p>
+        {{end}}
+    </article>
+    {{end}}
+</div>
+{{end}}

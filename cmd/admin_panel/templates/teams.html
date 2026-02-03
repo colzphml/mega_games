@@ -1,0 +1,62 @@
+{{define "content"}}
+<article>
+    <header>
+        <strong>Teams Management</strong>
+    </header>
+
+    <form hx-post="/teams" hx-target="#teams-table tbody" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful) this.reset()">
+        <div class="grid">
+            <input type="text" name="name" placeholder="Name (ID)" required>
+            <input type="text" name="short_name" placeholder="Short Name" required>
+            <input type="text" name="emoji" placeholder="Emoji">
+            <input type="text" name="player" placeholder="Player Name">
+            <button type="submit">Add Team</button>
+        </div>
+    </form>
+
+    <figure>
+        <table id="teams-table" role="grid">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Short Name</th>
+                    <th>Emoji</th>
+                    <th>Player</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .}}
+                    {{template "team-row" .}}
+                {{end}}
+            </tbody>
+        </table>
+    </figure>
+</article>
+{{end}}
+
+{{define "team-row"}}
+<tr id="team-{{.Name}}">
+    <td>{{.Name}}</td>
+    <td>{{.ShortName}}</td>
+    <td>{{.Emoji}}</td>
+    <td>{{.Player}}</td>
+    <td>
+        <button class="outline" hx-get="/teams/{{.Name}}/edit" hx-target="#team-{{.Name}}" hx-swap="outerHTML">Edit</button>
+        <button class="outline secondary" hx-delete="/teams/{{.Name}}" hx-target="#team-{{.Name}}" hx-swap="outerHTML" hx-confirm="Are you sure?">Delete</button>
+    </td>
+</tr>
+{{end}}
+
+{{define "team-edit-row"}}
+<tr id="team-{{.Name}}">
+    <td><input type="text" name="name" value="{{.Name}}" readonly></td>
+    <td><input type="text" name="short_name" value="{{.ShortName}}" required></td>
+    <td><input type="text" name="emoji" value="{{.Emoji}}"></td>
+    <td><input type="text" name="player" value="{{.Player}}"></td>
+    <td>
+        <button hx-put="/teams/{{.Name}}" hx-include="closest tr" hx-target="#team-{{.Name}}" hx-swap="outerHTML">Save</button>
+        <button class="outline secondary" hx-get="/teams/{{.Name}}" hx-target="#team-{{.Name}}" hx-swap="outerHTML">Cancel</button>
+    </td>
+</tr>
+{{end}}

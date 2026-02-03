@@ -332,6 +332,34 @@ services:
     networks:
       - megagames-net
 
+  admin-panel:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+    ports:
+      - "8081:8081"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: megagames
+      POSTGRES_PASSWORD: megagames
+      POSTGRES_DB: megagames
+      HEALTH_ADDR: ":8081"
+      TZ: ${TZ}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    labels:
+      - autoheal=true
+    networks:
+      - megagames-net
+
   autoheal:
     image: willfarrell/autoheal:latest
     restart: unless-stopped
@@ -390,6 +418,7 @@ services:
     ports:
       - "${GRAFANA_EXPOSE_PORT:-3000}:3000"
     environment:
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"

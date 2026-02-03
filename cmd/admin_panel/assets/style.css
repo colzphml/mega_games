@@ -1,0 +1,13 @@
+/* Minimal custom overrides for admin panel */
+:root {
+  --pico-font-size: 16px;
+}
+
+body {
+    padding-top: 2rem;
+}
+
+.container-fluid {
+    padding-left: 2rem;
+    padding-right: 2rem;
+}

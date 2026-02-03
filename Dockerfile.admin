@@ -1,0 +1,41 @@
+FROM --platform=$BUILDPLATFORM golang:1.25.5-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies
+RUN apk add --no-cache git
+
+# Copy go mod and sum files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the rest of the source code
+COPY . .
+
+# Build the admin panel
+RUN CGO_ENABLED=0 GOOS=linux go build -o admin-panel ./cmd/admin_panel/main.go
+
+# Final stage
+FROM alpine:3.21
+
+# Set timezone
+ARG TZ=Europe/Moscow
+ENV TZ=$TZ
+RUN apk add --no-cache tzdata
+
+# Create app user
+RUN adduser -D -u 1000 app
+USER app
+
+WORKDIR /app
+
+# Copy binary
+COPY --from=builder /app/admin-panel /app/admin-panel
+
+# Copy assets and templates
+COPY cmd/admin_panel/assets /app/cmd/admin_panel/assets
+COPY cmd/admin_panel/templates /app/cmd/admin_panel/templates
+
+EXPOSE 8081
+
+ENTRYPOINT ["/app/admin-panel"]

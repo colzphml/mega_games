@@ -1,0 +1,21 @@
+{{define "content"}}
+<hgroup>
+    <h2>Schedule Management</h2>
+    <h3>Upload new schedule data</h3>
+</hgroup>
+
+<article>
+    <header><strong>Upload CSV</strong></header>
+    <p>Upload the <code>MEGA_games.csv</code> file to update the schedule.</p>
+    
+    <form hx-post="/schedule/upload" hx-encoding="multipart/form-data" hx-target="#upload-result">
+        <label for="file">
+            CSV File
+            <input type="file" id="file" name="MEGA_games.csv" accept=".csv" required>
+        </label>
+        <button type="submit" aria-busy="false" onclick="this.setAttribute('aria-busy', 'true')">Upload Schedule</button>
+    </form>
+    
+    <div id="upload-result"></div>
+</article>
+{{end}}

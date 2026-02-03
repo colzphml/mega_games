@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mega Games Admin</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <link rel="stylesheet" href="/assets/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+    <nav class="container-fluid">
+        <ul>
+            <li><strong>Mega Games Admin</strong></li>
+        </ul>
+        <ul>
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/teams">Teams</a></li>
+            <li><a href="/schedule">Schedule</a></li>
+            <li><a href="/logs">Logs</a></li>
+            <li><a href="#" role="button" class="secondary">Log out</a></li>
+        </ul>
+    </nav>
+    <main class="container">
+        {{block "content" .}}
+        <article>
+            <header>Welcome</header>
+            <p>Admin panel content will go here.</p>
+        </article>
+        {{end}}
+    </main>
+    <footer class="container">
+        <small>Mega Games Bot Admin</small>
+    </footer>
+</body>
+</html>
