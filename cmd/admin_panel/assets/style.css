@@ -11,3 +11,16 @@ body {
     padding-left: 2rem;
     padding-right: 2rem;
 }
+
+.overflow-auto {
+    overflow-x: auto;
+}
+
+figure {
+    width: 100%;
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+}

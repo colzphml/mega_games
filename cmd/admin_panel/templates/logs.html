@@ -7,7 +7,8 @@
     <script>
         const hostname = window.location.hostname;
         const iframe = document.createElement('iframe');
-        iframe.src = `http://${hostname}:3000/?kiosk`;
+        // Use window.location.protocol to support https if needed, though Grafana is likely http
+        iframe.src = `http://${hostname}:3000/d/mega-games-logs/mega-games-logs?orgId=1&refresh=5s&kiosk`;
         iframe.width = "100%";
         iframe.height = "100%";
         iframe.frameBorder = "0";
