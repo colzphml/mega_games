@@ -1,30 +1,36 @@
 {{define "content"}}
-<h2>System Status</h2>
-<div class="grid">
-    {{range $service, $statuses := .}}
-    <article>
-        <header><strong>{{$service}}</strong></header>
-        {{if $statuses}}
-        <table role="grid">
-            <thead>
-                <tr>
-                    <th scope="col">Status</th>
-                    <th scope="col">Count</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{range $status, $count := $statuses}}
-                <tr>
-                    <td>{{$status}}</td>
-                    <td>{{$count}}</td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table>
-        {{else}}
-        <p>No data available.</p>
-        {{end}}
-    </article>
+<h2>Messages</h2>
+<article>
+    <header><strong>Unified status</strong> <small>Latest 50 messages across services</small></header>
+    {{if .Messages}}
+    <table role="grid">
+        <thead>
+            <tr>
+                <th scope="col">Message ID</th>
+                <th scope="col">Created At</th>
+                <th scope="col">Processor</th>
+                <th scope="col">Week Formatter</th>
+                <th scope="col">Game Image</th>
+                <th scope="col">Telegram Week</th>
+                <th scope="col">Telegram Game</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Messages}}
+            <tr>
+                <td><code>{{.MessageID}}</code></td>
+                <td>{{.CreatedAt}}</td>
+                <td>{{.ProcessorStatus}}</td>
+                <td>{{.WeekFormatterStatus}}</td>
+                <td>{{.GameImageStatus}}</td>
+                <td>{{.TelegramWeekStatus}}</td>
+                <td>{{.TelegramGameStatus}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p>No messages available.</p>
     {{end}}
-</div>
+</article>
 {{end}}

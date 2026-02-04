@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,6 +28,16 @@ type Game struct {
 	WeekIndex   int
 	Home        string
 	Away        string
+}
+
+type UnifiedMessage struct {
+	MessageID           string
+	CreatedAt           time.Time
+	ProcessorStatus     string
+	WeekFormatterStatus string
+	GameImageStatus     string
+	TelegramWeekStatus  string
+	TelegramGameStatus  string
 }
 
 type Store struct {
@@ -170,4 +181,88 @@ func (s *Store) GetStatusCounts(ctx context.Context) (map[string]map[string]int,
 	}
 
 	return result, nil
+}
+
+func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMessage, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		WITH all_messages AS (
+			SELECT message_id, created_at FROM discord_message_status
+			UNION ALL
+			SELECT message_id, created_at FROM week_message_status
+			UNION ALL
+			SELECT message_id, created_at FROM game_image_status
+			UNION ALL
+			SELECT message_id, created_at FROM telegram_week_status
+			UNION ALL
+			SELECT message_id, created_at FROM telegram_game_status
+		),
+		base AS (
+			SELECT message_id, MAX(created_at) AS created_at
+			FROM all_messages
+			GROUP BY message_id
+		)
+		SELECT
+			base.message_id,
+			base.created_at,
+			d.status AS processor_status,
+			w.status AS week_formatter_status,
+			g.status AS game_image_status,
+			tw.status AS telegram_week_status,
+			tg.status AS telegram_game_status
+		FROM base
+		LEFT JOIN discord_message_status d ON d.message_id = base.message_id
+		LEFT JOIN week_message_status w ON w.message_id = base.message_id
+		LEFT JOIN game_image_status g ON g.message_id = base.message_id
+		LEFT JOIN telegram_week_status tw ON tw.message_id = base.message_id
+		LEFT JOIN telegram_game_status tg ON tg.message_id = base.message_id
+		ORDER BY base.created_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query unified messages: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []UnifiedMessage
+	for rows.Next() {
+		var msg UnifiedMessage
+		var processorStatus *string
+		var weekFormatterStatus *string
+		var gameImageStatus *string
+		var telegramWeekStatus *string
+		var telegramGameStatus *string
+		if err := rows.Scan(
+			&msg.MessageID,
+			&msg.CreatedAt,
+			&processorStatus,
+			&weekFormatterStatus,
+			&gameImageStatus,
+			&telegramWeekStatus,
+			&telegramGameStatus,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan unified message: %w", err)
+		}
+		msg.ProcessorStatus = normalizeStatus(processorStatus)
+		msg.WeekFormatterStatus = normalizeStatus(weekFormatterStatus)
+		msg.GameImageStatus = normalizeStatus(gameImageStatus)
+		msg.TelegramWeekStatus = normalizeStatus(telegramWeekStatus)
+		msg.TelegramGameStatus = normalizeStatus(telegramGameStatus)
+		messages = append(messages, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return messages, nil
+}
+
+func normalizeStatus(status *string) string {
+	if status == nil || *status == "" {
+		return "n/a"
+	}
+	return *status
 }

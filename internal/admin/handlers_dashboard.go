@@ -15,6 +15,20 @@ type DashboardHandler struct {
 	scheduleTmpl  *template.Template
 }
 
+type DashboardMessage struct {
+	MessageID           string
+	CreatedAt           string
+	ProcessorStatus     string
+	WeekFormatterStatus string
+	GameImageStatus     string
+	TelegramWeekStatus  string
+	TelegramGameStatus  string
+}
+
+type DashboardViewData struct {
+	Messages []DashboardMessage
+}
+
 func NewDashboardHandler(store *Store) (*DashboardHandler, error) {
 	dashboardTmpl, err := template.ParseFiles(
 		"cmd/admin_panel/templates/layout.html",
@@ -49,14 +63,29 @@ func NewDashboardHandler(store *Store) (*DashboardHandler, error) {
 }
 
 func (h *DashboardHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
-	counts, err := h.store.GetStatusCounts(r.Context())
+	messages, err := h.store.ListUnifiedMessages(r.Context(), 50)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to get status counts")
+		log.Error().Err(err).Msg("failed to get unified messages")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	if err := h.dashboardTmpl.ExecuteTemplate(w, "layout.html", counts); err != nil {
+	viewData := DashboardViewData{
+		Messages: make([]DashboardMessage, 0, len(messages)),
+	}
+	for _, message := range messages {
+		viewData.Messages = append(viewData.Messages, DashboardMessage{
+			MessageID:           message.MessageID,
+			CreatedAt:           message.CreatedAt.Format("2006-01-02 15:04:05"),
+			ProcessorStatus:     message.ProcessorStatus,
+			WeekFormatterStatus: message.WeekFormatterStatus,
+			GameImageStatus:     message.GameImageStatus,
+			TelegramWeekStatus:  message.TelegramWeekStatus,
+			TelegramGameStatus:  message.TelegramGameStatus,
+		})
+	}
+
+	if err := h.dashboardTmpl.ExecuteTemplate(w, "layout.html", viewData); err != nil {
 		log.Error().Err(err).Msg("failed to render dashboard template")
 	}
 }
