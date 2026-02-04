@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -38,6 +39,11 @@ type UnifiedMessage struct {
 	GameImageStatus     string
 	TelegramWeekStatus  string
 	TelegramGameStatus  string
+	GameID              string
+	ImageURL            string
+	WeekText            string
+	Errors              []string
+	DropReason          string
 }
 
 type Store struct {
@@ -212,7 +218,22 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 			w.status AS week_formatter_status,
 			g.status AS game_image_status,
 			tw.status AS telegram_week_status,
-			tg.status AS telegram_game_status
+			tg.status AS telegram_game_status,
+			g.payload->>'game_id' AS game_id,
+			g.image->>'image_url' AS image_url,
+			w.payload->>'title' AS week_title,
+			w.payload->>'season' AS week_season,
+			w.payload->>'week' AS week_number,
+			d.last_error AS processor_error,
+			w.last_error AS week_formatter_error,
+			g.last_error AS game_image_error,
+			tw.last_error AS telegram_week_error,
+			tg.last_error AS telegram_game_error,
+			d.updated_at AS processor_updated_at,
+			w.updated_at AS week_formatter_updated_at,
+			g.updated_at AS game_image_updated_at,
+			tw.updated_at AS telegram_week_updated_at,
+			tg.updated_at AS telegram_game_updated_at
 		FROM base
 		LEFT JOIN discord_message_status d ON d.message_id = base.message_id
 		LEFT JOIN week_message_status w ON w.message_id = base.message_id
@@ -235,6 +256,21 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 		var gameImageStatus *string
 		var telegramWeekStatus *string
 		var telegramGameStatus *string
+		var gameID *string
+		var imageURL *string
+		var weekTitle *string
+		var weekSeason *string
+		var weekNumber *string
+		var processorError *string
+		var weekFormatterError *string
+		var gameImageError *string
+		var telegramWeekError *string
+		var telegramGameError *string
+		var processorUpdatedAt *time.Time
+		var weekFormatterUpdatedAt *time.Time
+		var gameImageUpdatedAt *time.Time
+		var telegramWeekUpdatedAt *time.Time
+		var telegramGameUpdatedAt *time.Time
 		if err := rows.Scan(
 			&msg.MessageID,
 			&msg.CreatedAt,
@@ -243,6 +279,21 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 			&gameImageStatus,
 			&telegramWeekStatus,
 			&telegramGameStatus,
+			&gameID,
+			&imageURL,
+			&weekTitle,
+			&weekSeason,
+			&weekNumber,
+			&processorError,
+			&weekFormatterError,
+			&gameImageError,
+			&telegramWeekError,
+			&telegramGameError,
+			&processorUpdatedAt,
+			&weekFormatterUpdatedAt,
+			&gameImageUpdatedAt,
+			&telegramWeekUpdatedAt,
+			&telegramGameUpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan unified message: %w", err)
 		}
@@ -251,6 +302,16 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 		msg.GameImageStatus = normalizeStatus(gameImageStatus)
 		msg.TelegramWeekStatus = normalizeStatus(telegramWeekStatus)
 		msg.TelegramGameStatus = normalizeStatus(telegramGameStatus)
+		msg.GameID = normalizeValue(gameID)
+		msg.ImageURL = normalizeValue(imageURL)
+		msg.WeekText = formatWeekText(weekTitle, weekSeason, weekNumber)
+		msg.Errors, msg.DropReason = buildErrorDetails(errorCandidates{
+			processor: errorCandidate{message: processorError, updatedAt: processorUpdatedAt},
+			week:      errorCandidate{message: weekFormatterError, updatedAt: weekFormatterUpdatedAt},
+			image:     errorCandidate{message: gameImageError, updatedAt: gameImageUpdatedAt},
+			tgWeek:    errorCandidate{message: telegramWeekError, updatedAt: telegramWeekUpdatedAt},
+			tgGame:    errorCandidate{message: telegramGameError, updatedAt: telegramGameUpdatedAt},
+		})
 		messages = append(messages, msg)
 	}
 	if err := rows.Err(); err != nil {
@@ -265,4 +326,88 @@ func normalizeStatus(status *string) string {
 		return "n/a"
 	}
 	return *status
+}
+
+func normalizeValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func formatWeekText(title *string, season *string, week *string) string {
+	if titleText := normalizeValue(title); titleText != "" {
+		return titleText
+	}
+	seasonText := normalizeValue(season)
+	weekText := normalizeValue(week)
+	if seasonText == "" && weekText == "" {
+		return ""
+	}
+	if seasonText != "" && weekText != "" {
+		return fmt.Sprintf("%s week %s", seasonText, weekText)
+	}
+	if seasonText != "" {
+		return seasonText
+	}
+	return fmt.Sprintf("week %s", weekText)
+}
+
+type errorCandidate struct {
+	message   *string
+	updatedAt *time.Time
+}
+
+type errorCandidates struct {
+	processor errorCandidate
+	week      errorCandidate
+	image     errorCandidate
+	tgWeek    errorCandidate
+	tgGame    errorCandidate
+}
+
+type errorEntry struct {
+	component string
+	message   string
+	updatedAt *time.Time
+}
+
+func buildErrorDetails(candidates errorCandidates) ([]string, string) {
+	entries := make([]errorEntry, 0, 5)
+	entries = appendErrorEntry(entries, "processor", candidates.processor)
+	entries = appendErrorEntry(entries, "week_formatter", candidates.week)
+	entries = appendErrorEntry(entries, "game_image", candidates.image)
+	entries = appendErrorEntry(entries, "telegram_week", candidates.tgWeek)
+	entries = appendErrorEntry(entries, "telegram_game", candidates.tgGame)
+	if len(entries) == 0 {
+		return nil, ""
+	}
+
+	formatted := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		formatted = append(formatted, fmt.Sprintf("%s: %s", entry.component, entry.message))
+	}
+
+	latest := entries[0]
+	for _, entry := range entries[1:] {
+		if entry.updatedAt == nil {
+			continue
+		}
+		if latest.updatedAt == nil || entry.updatedAt.After(*latest.updatedAt) {
+			latest = entry
+		}
+	}
+
+	return formatted, fmt.Sprintf("%s: %s", latest.component, latest.message)
+}
+
+func appendErrorEntry(entries []errorEntry, component string, candidate errorCandidate) []errorEntry {
+	if candidate.message == nil {
+		return entries
+	}
+	message := strings.TrimSpace(*candidate.message)
+	if message == "" {
+		return entries
+	}
+	return append(entries, errorEntry{component: component, message: message, updatedAt: candidate.updatedAt})
 }

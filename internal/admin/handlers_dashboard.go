@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -23,6 +24,11 @@ type DashboardMessage struct {
 	GameImageStatus     string
 	TelegramWeekStatus  string
 	TelegramGameStatus  string
+	GameID              string
+	ImageURL            string
+	WeekText            string
+	Errors              string
+	DropReason          string
 }
 
 type DashboardViewData struct {
@@ -74,6 +80,7 @@ func (h *DashboardHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		Messages: make([]DashboardMessage, 0, len(messages)),
 	}
 	for _, message := range messages {
+		errorsText := strings.Join(message.Errors, "; ")
 		viewData.Messages = append(viewData.Messages, DashboardMessage{
 			MessageID:           message.MessageID,
 			CreatedAt:           message.CreatedAt.Format("2006-01-02 15:04:05"),
@@ -82,6 +89,11 @@ func (h *DashboardHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			GameImageStatus:     message.GameImageStatus,
 			TelegramWeekStatus:  message.TelegramWeekStatus,
 			TelegramGameStatus:  message.TelegramGameStatus,
+			GameID:              fallbackValue(message.GameID, "n/a"),
+			ImageURL:            message.ImageURL,
+			WeekText:            fallbackValue(message.WeekText, "n/a"),
+			Errors:              errorsText,
+			DropReason:          fallbackValue(message.DropReason, ""),
 		})
 	}
 
@@ -100,4 +112,11 @@ func (h *DashboardHandler) Schedule(w http.ResponseWriter, r *http.Request) {
 	if err := h.scheduleTmpl.ExecuteTemplate(w, "layout.html", nil); err != nil {
 		log.Error().Err(err).Msg("failed to render schedule template")
 	}
+}
+
+func fallbackValue(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }

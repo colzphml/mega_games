@@ -7,24 +7,42 @@
         <thead>
             <tr>
                 <th scope="col">Message ID</th>
+                <th scope="col">Game ID</th>
+                <th scope="col">Image</th>
+                <th scope="col">Week Info</th>
                 <th scope="col">Created At</th>
                 <th scope="col">Processor</th>
                 <th scope="col">Week Formatter</th>
                 <th scope="col">Game Image</th>
                 <th scope="col">Telegram Week</th>
                 <th scope="col">Telegram Game</th>
+                <th scope="col">Errors</th>
+                <th scope="col">Drop Reason</th>
             </tr>
         </thead>
         <tbody>
             {{range .Messages}}
             <tr>
                 <td><code>{{.MessageID}}</code></td>
+                <td>{{.GameID}}</td>
+                <td>
+                    {{if .ImageURL}}
+                    <a href="{{.ImageURL}}" target="_blank" rel="noopener">
+                        <img src="{{.ImageURL}}" alt="Game image" style="max-width: 56px; height: auto; display: block;">
+                    </a>
+                    {{else}}
+                    <em>n/a</em>
+                    {{end}}
+                </td>
+                <td>{{.WeekText}}</td>
                 <td>{{.CreatedAt}}</td>
                 <td>{{.ProcessorStatus}}</td>
                 <td>{{.WeekFormatterStatus}}</td>
                 <td>{{.GameImageStatus}}</td>
                 <td>{{.TelegramWeekStatus}}</td>
                 <td>{{.TelegramGameStatus}}</td>
+                <td>{{if .Errors}}<span style="color: #b42318; font-weight: 600;">{{.Errors}}</span>{{else}}<em>none</em>{{end}}</td>
+                <td>{{if .DropReason}}<span style="color: #b42318;">{{.DropReason}}</span>{{else}}<em>n/a</em>{{end}}</td>
             </tr>
             {{end}}
         </tbody>
