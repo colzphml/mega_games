@@ -21,116 +21,95 @@
 - `discord_kafka_game_image` — получает картинку игры, сохраняет в MinIO, трекает статус в Mongo и Postgres.
 - `discord_kafka_telegram_week_sender` — отправляет недельные сообщения в Telegram, трекает статус в Postgres.
 - `discord_kafka_telegram_game_sender` — отправляет игровые картинки в Telegram, трекает статус в Postgres.
+- `admin-panel` — веб-интерфейс для мониторинга статусов сообщений и управления командами.
 - `discord_tools` — утилиты (дамп Discord‑сообщений и генерация SQL из CSV).
 - `autoheal` — перезапускает контейнеры со статусом `unhealthy`.
-- `loki` — хранение логов.
-- `promtail` — сбор логов контейнеров и отправка в Loki.
-- `grafana` — дашборды и поиск логов.
+- `loki`, `promtail`, `grafana` — стек мониторинга и логов.
 
-## Быстрый старт
+## Развертывание (Workflow v4.1.0+)
 
-1) Скопировать `.env.example` в `.env` и заполнить:
-   - `DISCORD_TOKEN`, `DISCORD_CHANNEL_ID`
-   - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEEK_CHAT_ID`, `TELEGRAM_GAME_CHAT_ID`
+Проект использует **Local Docker Registry** (`192.168.0.61:5000`) для ускорения деплоя на Raspberry Pi (ARM). Сборка выполняется на мощной Dev-машине, а Pi просто скачивает готовые образы.
+
+### 1. Сборка и публикация (на Dev-машине)
+
+1. Установите переменную `TAG` в `.env` (например, `4.1.0`).
+2. Запустите скрипт:
+   ```bash
+   ./scripts/publish.sh
+   ```
+   Скрипт соберет Docker-образы для всех сервисов и отправит их в реестр `192.168.0.61:5000`.
+
+### 2. Деплой (на Raspberry Pi)
+
+1. Зайдите на сервер.
+2. Обновите код и запустите скрипт деплоя:
+   ```bash
+   git pull
+   ./scripts/deploy.sh
+   ```
+   Скрипт попытается скачать образы из реестра. Если реестр недоступен или образы отсутствуют, он автоматически перейдет к локальной сборке (fallback).
+
+## Установка с нуля (curl)
+
+Скрипт установки скачивает релиз, настраивает `.env` и запускает проект.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.1.0/scripts/install.sh \
+  | TAG=v4.1.0 INSTALL_DIR=/opt/mega_games bash
+```
+
+Параметры:
+- `TAG`: версия релиза (git tag).
+- `INSTALL_DIR`: куда установить проект.
+- `NONINTERACTIVE=1`: пропустить вопросы (если `.env` уже создан или устраивают дефолты).
+
+## Admin Panel
+
+Доступна на порту `8081`.
+- **Unified Status**: Единая таблица всех сообщений. Отображает путь сообщения через все сервисы, ошибки, Game ID и ссылки на изображения.
+- **Teams**: Управление списком команд (добавление, редактирование).
+- **Logs**: Встроенный дашборд Grafana (Loki).
+
+*Примечание:* Если вы используете SSH-туннель (порт 8081), для работы логов нужно пробросить и порт 3000 (Grafana):
+```bash
+ssh -L 8081:localhost:8081 -L 3000:localhost:3000 pi@192.168.0.61
+```
+
+## Быстрый старт (локально)
+
+1) Скопировать `.env.example` в `.env` и заполнить токены Discord/Telegram.
 2) Запуск:
-
-```
-docker compose up -d
-```
-
-3) Если нужен Selenium, включи профиль:
-
-```
-COMPOSE_PROFILES=selenium docker compose up -d
-```
-
-## Установка через curl
-
-Скрипт установки умеет:
-- проверить зависимости (docker, compose, curl);
-- скачать нужный релиз;
-- создать `.env` из `.env.example`;
-- при желании задать базовые параметры интерактивно;
-- запустить `docker compose up -d --build`.
-
-Пример установки:
-
-```
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.0.0/scripts/install.sh \
-  | TAG=v4.0.0 INSTALL_DIR=/opt/mega_games bash
-```
-
-Если интерактивный режим не нужен:
-
-```
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.0.0/scripts/install.sh \
-  | TAG=v4.0.0 INSTALL_DIR=/opt/mega_games NONINTERACTIVE=1 bash
-```
-
-Примечания:
-- поддерживаются Linux/macOS на `amd64` и `arm64` (Raspberry Pi — только 64‑битные ОС);
-- интерактив можно пропустить через `NONINTERACTIVE=1` (или предварительно создав `.env` в `INSTALL_DIR`).
-- скрипт автоматически выставляет `TARGET_PLATFORM`.
-  Версия приложения берется из git-тега (git describe) во время сборки.
-
-## Релизы
-
-Релиз — это git‑тег `vX.Y.Z` и (опционально) Release на GitHub.
-
-Минимальные шаги:
-
-```
-git tag -a v4.0.0 -m "Release 4.0.0"
-git push origin v4.0.0
-```
-
-Если используешь GitHub CLI:
-
-```
-gh release create v4.0.0 --title "4.0.0" --notes "Mega Games bot release 4.0.0"
-```
+   ```bash
+   docker compose up -d
+   ```
+3) (Опционально) Selenium: `COMPOSE_PROFILES=selenium docker compose up -d`
 
 ## Полезные команды
 
-Посмотреть логи сервиса:
-```
+Посмотреть логи:
+```bash
 docker compose logs -f <service>
 ```
 
 Проверить health:
-```
+```bash
 docker compose exec <service> wget -qO- http://127.0.0.1:8080/health
 ```
 
-Проверить Kafka:
-```
+Kafka Consumer:
+```bash
 docker compose exec kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic <topic> --from-beginning
 ```
 
-## Мониторинг (Grafana + Loki)
+## Где что хранится
 
-Grafana доступна на `http://localhost:3000` (по умолчанию `admin/admin`). 
-Если вы используете SSH-туннель для доступа к Admin Panel (порт 8081), не забудьте пробросить и порт 3000 (`-L 8081:localhost:8081 -L 3000:localhost:3000`), иначе логи в панели не будут отображаться.
-Loki доступен на `http://localhost:3100`.
-
-Источники логов:
-- `promtail` читает логи Docker из `/var/lib/docker/containers` (требуется Linux хост).
-- В Grafana источник Loki уже провижинен, можно сразу искать логи по лейблу `job="docker"`.
+- **Postgres**: статусы обработки всех сервисов.
+- **MongoDB**: метаданные изображений.
+- **MinIO**: файлы изображений.
+- **Loki**: логи контейнеров.
 
 ## Траблшутинг
 
-- **Kafka init бесконечно пишет `waiting for kafka`** — проверь `KAFKA_BROKERS`, доступность брокера и что `kafka` поднят.
-- **AccessDenied на ссылках MinIO** — бакет приватный. Сделай public read или получай временные ссылки через `mc` (см. `discord_kafka_game_image/README.md`).
-- **Изображение "как из headless" при gochrome** — проверь `GAME_IMAGE_FETCHER_TYPE` внутри контейнера и пересоздай сервис.
-- **Selenium не запускается** — включи профиль `COMPOSE_PROFILES=selenium`.
-- **No space left on device** — очисти Docker cache (`docker system df -v`, `docker builder prune`).
-
-## Где что хранится
-
-- Postgres: статусы обработки (processor, week formatter, game image, telegram senders).
-- MongoDB: статусы и метаданные изображений (game image).
-- MinIO: файлы изображений игр.
-
-## Данные расписания
-
-Для `discord_kafka_week_formatter` нужны таблицы `teams` и `schedule_games`. Их можно создать и наполнить через `discord_tools` (см. `discord_tools/README.md`).
+- **AccessDenied на MinIO**: проверьте bucket policy (public read) или используйте временные ссылки.
+- **Grafana "refused to connect"**: убедитесь, что порт 3000 проброшен или доступен с вашего IP.
+- **MongoDB Illegal instruction (ARM)**: используйте `MONGO_IMAGE` в `.env` для совместимой версии (если требуется).
