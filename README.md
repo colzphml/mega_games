@@ -109,7 +109,8 @@ docker compose exec kafka kafka-console-consumer --bootstrap-server kafka:9092 -
 
 ## Мониторинг (Grafana + Loki)
 
-Grafana доступна на `http://localhost:3000` (по умолчанию `admin/admin`).
+Grafana доступна на `http://localhost:3000` (по умолчанию `admin/admin`). 
+Если вы используете SSH-туннель для доступа к Admin Panel (порт 8081), не забудьте пробросить и порт 3000 (`-L 8081:localhost:8081 -L 3000:localhost:3000`), иначе логи в панели не будут отображаться.
 Loki доступен на `http://localhost:3100`.
 
 Источники логов:

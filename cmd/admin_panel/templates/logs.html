@@ -3,7 +3,15 @@
     <h2>Logs & Monitoring</h2>
     <h3>Grafana Dashboard</h3>
 </hgroup>
-<article style="padding: 0; overflow: hidden; height: 80vh;">
-    <iframe src="http://localhost:3000/?kiosk" width="100%" height="100%" frameborder="0"></iframe>
+<article style="padding: 0; overflow: hidden; height: 80vh;" id="grafana-container">
+    <script>
+        const hostname = window.location.hostname;
+        const iframe = document.createElement('iframe');
+        iframe.src = `http://${hostname}:3000/?kiosk`;
+        iframe.width = "100%";
+        iframe.height = "100%";
+        iframe.frameBorder = "0";
+        document.getElementById('grafana-container').appendChild(iframe);
+    </script>
 </article>
 {{end}}
