@@ -1,4 +1,27 @@
 {{define "content"}}
+<style>
+    .compact-table td, .compact-table th {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.9rem;
+    }
+    .compact-table input {
+        margin-bottom: 0;
+        padding: 0.25rem 0.5rem;
+        height: auto;
+        font-size: 0.9rem;
+    }
+    .compact-btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+        width: auto;
+        margin-bottom: 0;
+        display: inline-block;
+    }
+    /* Ensure inputs don't overflow */
+    .compact-table td input {
+        max-width: 100%;
+    }
+</style>
 <article>
     <header>
         <strong>Teams Management</strong>
@@ -15,7 +38,7 @@
     </form>
 
     <figure>
-        <table id="teams-table" role="grid">
+        <table id="teams-table" role="grid" class="compact-table">
             <thead>
                 <tr>
                     <th>Name</th>
@@ -42,8 +65,8 @@
     <td>{{.Emoji}}</td>
     <td>{{.Player}}</td>
     <td>
-        <button class="outline" hx-get="/teams/{{.Name}}/edit" hx-target="#team-{{.Name}}" hx-swap="outerHTML">Edit</button>
-        <button class="outline secondary" hx-delete="/teams/{{.Name}}" hx-target="#team-{{.Name}}" hx-swap="outerHTML" hx-confirm="Are you sure?">Delete</button>
+        <button class="outline compact-btn" hx-get="/teams/{{.Name}}/edit" hx-target="#team-{{.Name}}" hx-swap="outerHTML">Edit</button>
+        <button class="outline secondary compact-btn" hx-delete="/teams/{{.Name}}" hx-target="#team-{{.Name}}" hx-swap="outerHTML" hx-confirm="Are you sure?">Delete</button>
     </td>
 </tr>
 {{end}}
@@ -55,8 +78,8 @@
     <td><input type="text" name="emoji" value="{{.Emoji}}"></td>
     <td><input type="text" name="player" value="{{.Player}}"></td>
     <td>
-        <button hx-put="/teams/{{.Name}}" hx-include="closest tr" hx-target="#team-{{.Name}}" hx-swap="outerHTML">Save</button>
-        <button class="outline secondary" hx-get="/teams/{{.Name}}" hx-target="#team-{{.Name}}" hx-swap="outerHTML">Cancel</button>
+        <button class="compact-btn" hx-put="/teams/{{.Name}}" hx-include="closest tr" hx-target="#team-{{.Name}}" hx-swap="outerHTML">Save</button>
+        <button class="outline secondary compact-btn" hx-get="/teams/{{.Name}}" hx-target="#team-{{.Name}}" hx-swap="outerHTML">Cancel</button>
     </td>
 </tr>
 {{end}}
