@@ -202,6 +202,8 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 			UNION ALL
 			SELECT message_id, created_at FROM game_image_status
 			UNION ALL
+			SELECT message_id, COALESCE(last_attempt_at, failed_at, first_seen_at) AS created_at FROM game_image_failed
+			UNION ALL
 			SELECT message_id, created_at FROM telegram_week_status
 			UNION ALL
 			SELECT message_id, created_at FROM telegram_game_status
@@ -216,28 +218,35 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 			base.created_at,
 			d.status AS processor_status,
 			w.status AS week_formatter_status,
-			g.status AS game_image_status,
+			CASE
+				WHEN g.status IS NOT NULL THEN g.status
+				WHEN gf.message_id IS NOT NULL THEN 'failed'
+				ELSE NULL
+			END AS game_image_status,
 			tw.status AS telegram_week_status,
 			tg.status AS telegram_game_status,
-			g.payload->>'game_id' AS game_id,
-			g.image->>'image_url' AS image_url,
+			COALESCE(g.payload->>'game_id', gf.payload->>'game_id') AS game_id,
+			COALESCE(g.image->>'image_url', gf.image->>'image_url') AS image_url,
 			w.payload->>'title' AS week_title,
 			w.payload->>'season' AS week_season,
 			w.payload->>'week' AS week_number,
 			d.last_error AS processor_error,
 			w.last_error AS week_formatter_error,
-			g.last_error AS game_image_error,
+			COALESCE(g.last_error, gf.last_error) AS game_image_error,
 			tw.last_error AS telegram_week_error,
 			tg.last_error AS telegram_game_error,
 			d.updated_at AS processor_updated_at,
 			w.updated_at AS week_formatter_updated_at,
-			g.updated_at AS game_image_updated_at,
+			COALESCE(g.updated_at, gf.last_attempt_at, gf.failed_at) AS game_image_updated_at,
 			tw.updated_at AS telegram_week_updated_at,
-			tg.updated_at AS telegram_game_updated_at
+			tg.updated_at AS telegram_game_updated_at,
+			gf.details->>'reason' AS game_image_failed_reason,
+			gf.details->>'source' AS game_image_failed_source
 		FROM base
 		LEFT JOIN discord_message_status d ON d.message_id = base.message_id
 		LEFT JOIN week_message_status w ON w.message_id = base.message_id
 		LEFT JOIN game_image_status g ON g.message_id = base.message_id
+		LEFT JOIN game_image_failed gf ON gf.message_id = base.message_id
 		LEFT JOIN telegram_week_status tw ON tw.message_id = base.message_id
 		LEFT JOIN telegram_game_status tg ON tg.message_id = base.message_id
 		ORDER BY base.created_at DESC
@@ -271,6 +280,8 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 		var gameImageUpdatedAt *time.Time
 		var telegramWeekUpdatedAt *time.Time
 		var telegramGameUpdatedAt *time.Time
+		var gameImageFailedReason *string
+		var gameImageFailedSource *string
 		if err := rows.Scan(
 			&msg.MessageID,
 			&msg.CreatedAt,
@@ -294,6 +305,8 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 			&gameImageUpdatedAt,
 			&telegramWeekUpdatedAt,
 			&telegramGameUpdatedAt,
+			&gameImageFailedReason,
+			&gameImageFailedSource,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan unified message: %w", err)
 		}
@@ -312,6 +325,13 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 			tgWeek:    errorCandidate{message: telegramWeekError, updatedAt: telegramWeekUpdatedAt},
 			tgGame:    errorCandidate{message: telegramGameError, updatedAt: telegramGameUpdatedAt},
 		})
+		if reason := normalizeValue(gameImageFailedReason); reason != "" {
+			dropReason := "game_image: " + reason
+			if source := normalizeValue(gameImageFailedSource); source != "" {
+				dropReason += " (source: " + source + ")"
+			}
+			msg.DropReason = dropReason
+		}
 		messages = append(messages, msg)
 	}
 	if err := rows.Err(); err != nil {

@@ -28,17 +28,21 @@ import (
 // log is the package-level logger configured for structured logging.
 var log = zerolog.New(os.Stdout).With().Str("package", "headless").Timestamp().Logger()
 
+const defaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
+
 // Client represents a headless client that renders recap images from the API.
 type Client struct {
-	baseURL string
-	league  string
+	baseURL     string
+	league      string
+	httpTimeout time.Duration
 }
 
 // NewClient initializes a new headless client with the provided configuration.
 func NewClient(ctx context.Context, cfg config.Config) (*Client, error) {
 	return &Client{
-		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
-		league:  strings.TrimSpace(cfg.League),
+		baseURL:     strings.TrimRight(cfg.BaseURL, "/"),
+		league:      strings.TrimSpace(cfg.League),
+		httpTimeout: cfg.FetchTimeout,
 	}, nil
 }
 
@@ -57,11 +61,11 @@ func (c *Client) Fetch(ctx context.Context, gameID string) (types.Result, error)
 	if err != nil {
 		return types.Result{}, err
 	}
-	recData, err := fetchJSON(ctx, recapURL)
+	recData, err := fetchJSON(ctx, recapURL, c.httpTimeout)
 	if err != nil {
 		return types.Result{}, err
 	}
-	img, err := buildRecapImage(ctx, c.baseURL, recData)
+	img, err := buildRecapImage(ctx, c.baseURL, c.httpTimeout, recData)
 	if err != nil {
 		return types.Result{}, err
 	}
@@ -204,22 +208,22 @@ func parseJSONIntString(s string) (int, error) {
 	return strconv.Atoi(s)
 }
 
-func buildRecapImage(ctx context.Context, baseURL string, recData Recap) (image.Image, error) {
+func buildRecapImage(ctx context.Context, baseURL string, httpTimeout time.Duration, recData Recap) (image.Image, error) {
 	baseURL = strings.TrimRight(baseURL, "/")
 	// Загружаем фон стадиона и логотипы
-	bg, err := loadImage(ctx, baseURL+"/images/stadiums/"+strconv.Itoa(recData.Game.HomeTeam.LogoID)+".png")
+	bg, err := loadImage(ctx, baseURL+"/images/stadiums/"+strconv.Itoa(recData.Game.HomeTeam.LogoID)+".png", httpTimeout)
 	if err != nil {
 		return nil, err
 	}
-	logoHome, err := loadLogo(ctx, baseURL, recData.Game.HomeTeam)
+	logoHome, err := loadLogo(ctx, baseURL, recData.Game.HomeTeam, httpTimeout)
 	if err != nil {
 		return nil, err
 	}
-	logoAway, err := loadLogo(ctx, baseURL, recData.Game.AwayTeam)
+	logoAway, err := loadLogo(ctx, baseURL, recData.Game.AwayTeam, httpTimeout)
 	if err != nil {
 		return nil, err
 	}
-	footerLogo, err := loadImage(ctx, baseURL+"/logo.png")
+	footerLogo, err := loadImage(ctx, baseURL+"/logo.png", httpTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -255,12 +259,14 @@ func buildRecapImage(ctx context.Context, baseURL string, recData Recap) (image.
 }
 
 // fetchJSON скачивает и распарсивает JSON
-func fetchJSON(ctx context.Context, url string) (Recap, error) {
+func fetchJSON(ctx context.Context, url string, timeout time.Duration) (Recap, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return Recap{}, fmt.Errorf("fetch recap json: %w", err)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	req.Header.Set("User-Agent", defaultUserAgent)
+	req.Header.Set("Accept", "application/json")
+	client := &http.Client{Timeout: timeout}
 	res, err := client.Do(req)
 	if err != nil {
 		return Recap{}, fmt.Errorf("fetch recap json: %w", err)
@@ -277,12 +283,14 @@ func fetchJSON(ctx context.Context, url string) (Recap, error) {
 }
 
 // loadImage скачивает изображение и декодирует его
-func loadImage(ctx context.Context, url string) (image.Image, error) {
+func loadImage(ctx context.Context, url string, timeout time.Duration) (image.Image, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch image: %w", err)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	req.Header.Set("User-Agent", defaultUserAgent)
+	req.Header.Set("Accept", "image/*,*/*;q=0.8")
+	client := &http.Client{Timeout: timeout}
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch image: %w", err)
@@ -299,11 +307,11 @@ func loadImage(ctx context.Context, url string) (image.Image, error) {
 }
 
 // loadLogo выбирает адрес логотипа (пользовательский или из каталога) и загружает его
-func loadLogo(ctx context.Context, baseURL string, t Team) (image.Image, error) {
+func loadLogo(ctx context.Context, baseURL string, t Team, timeout time.Duration) (image.Image, error) {
 	if t.Logo != nil {
-		return loadImage(ctx, *t.Logo)
+		return loadImage(ctx, *t.Logo, timeout)
 	}
-	return loadImage(ctx, strings.TrimRight(baseURL, "/")+"/images/teamlogos/256/"+strconv.Itoa(t.LogoID)+".png")
+	return loadImage(ctx, strings.TrimRight(baseURL, "/")+"/images/teamlogos/256/"+strconv.Itoa(t.LogoID)+".png", timeout)
 }
 
 // drawSideGradient затемняет края изображения

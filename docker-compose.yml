@@ -345,12 +345,14 @@ services:
       dockerfile: Dockerfile.admin
     ports:
       - "8081:8081"
+    env_file:
+      - .env
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: megagames
-      POSTGRES_PASSWORD: megagames
-      POSTGRES_DB: megagames
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       HEALTH_ADDR: ":8081"
       TZ: ${TZ}
     depends_on:
