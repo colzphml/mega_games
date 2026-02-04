@@ -47,3 +47,8 @@ DISCORD_TOKEN=abc DISCORD_CHANNEL_ID=123 go run ./cmd/message-dump/main.go 14614
 ```bash
 go run ./cmd/csv-to-sql --teams ../MEGA_teams.csv --schedule ../MEGA_games.csv > seed.sql
 ```
+
+## Деплой и доступы
+
+`discord_tools` не требует отдельного контейнера и запускается локально как утилита.
+Для release/deploy образов сервисов, URL-ов (admin/images/grafana) и команд обновления на Raspberry см. корневой `README.md`.

@@ -1,115 +1,159 @@
 # MEGA Games Bot
 
-Набор сервисов, который забирает новые сообщения из Discord, парсит обновления недели/игр, готовит сообщения и изображения, а затем отправляет все в Telegram. Все сервисы запускаются через `docker-compose.yml` и управляются через `.env`.
-
-## Архитектура потока
-
-1) `discord_kafka_listener` читает канал Discord и пишет ID сообщений в Kafka (`KAFKA_INPUT_TOPIC`).
-2) `discord_kafka_processor` берет ID, достает сообщение из Discord, парсит:
-   - недели → `KAFKA_WEEK_TOPIC` (JSON `{season, week}`)
-   - игры → `KAFKA_GAME_TOPIC` (строка game_id)
-3) `discord_kafka_week_formatter` берет недели, формирует текст для Telegram и пишет в `KAFKA_TELEGRAM_WEEK_TOPIC`.
-4) `discord_kafka_game_image` берет игры, получает картинку, сохраняет файл в MinIO, метаданные в Mongo+Postgres и пишет событие в `KAFKA_GAME_IMAGE_TOPIC`.
-5) `discord_kafka_telegram_week_sender` отправляет текст недели в Telegram.
-6) `discord_kafka_telegram_game_sender` скачивает картинку из MinIO и отправляет в Telegram с подписью‑ссылкой на игру.
+Go-микросервисы для цепочки Discord -> Kafka -> обработка -> Telegram.
 
 ## Сервисы
 
-- `discord_kafka_listener` — слушает Discord и пишет ID сообщений.
-- `discord_kafka_processor` — парсит сообщения, пишет недели/игры в Kafka, трекает статус в Postgres.
-- `discord_kafka_week_formatter` — формирует текст недели для Telegram, трекает статус в Postgres.
-- `discord_kafka_game_image` — получает картинку игры, сохраняет в MinIO, трекает статус в Mongo и Postgres.
-- `discord_kafka_telegram_week_sender` — отправляет недельные сообщения в Telegram, трекает статус в Postgres.
-- `discord_kafka_telegram_game_sender` — отправляет игровые картинки в Telegram, трекает статус в Postgres.
-- `admin-panel` — веб-интерфейс для мониторинга статусов сообщений и управления командами.
-- `discord_tools` — утилиты (дамп Discord‑сообщений и генерация SQL из CSV).
-- `autoheal` — перезапускает контейнеры со статусом `unhealthy`.
-- `loki`, `promtail`, `grafana` — стек мониторинга и логов.
+- `discord_kafka_listener` — читает Discord-канал, пишет ID сообщений в Kafka.
+- `discord_kafka_processor` — разбирает сообщения на week/game события.
+- `discord_kafka_week_formatter` — формирует текст недели для Telegram.
+- `discord_kafka_game_image` — генерирует/забирает recap-картинки, кладет в MinIO.
+- `discord_kafka_telegram_week_sender` — отправляет week-текст в Telegram.
+- `discord_kafka_telegram_game_sender` — отправляет game-картинки в Telegram.
+- `admin-panel` — статусы и админ-интерфейс.
+- `loki`, `promtail`, `grafana` — логирование и мониторинг.
+- `autoheal` — перезапуск unhealthy контейнеров.
 
-## Развертывание (Workflow v4.1.0+)
+## Data Flow
 
-Проект использует **Local Docker Registry** (`192.168.0.61:5000`) для ускорения деплоя на Raspberry Pi (ARM). Сборка выполняется на мощной Dev-машине, а Pi просто скачивает готовые образы.
+1. `discord_kafka_listener` -> `KAFKA_INPUT_TOPIC`
+2. `discord_kafka_processor` -> `KAFKA_WEEK_TOPIC` и `KAFKA_GAME_TOPIC`
+3. `discord_kafka_week_formatter` -> `KAFKA_TELEGRAM_WEEK_TOPIC`
+4. `discord_kafka_game_image` -> `KAFKA_GAME_IMAGE_TOPIC` (+ MinIO/Mongo/Postgres)
+5. Telegram sender-сервисы отправляют в Telegram-чаты
 
-### 1. Сборка и публикация (на Dev-машине)
+## Release Workflow (v4.2.0+)
 
-1. Установите переменную `TAG` в `.env` (например, `4.1.0`).
-2. Запустите скрипт:
-   ```bash
-   ./scripts/publish.sh
-   ```
-   Скрипт соберет Docker-образы для всех сервисов и отправит их в реестр `192.168.0.61:5000`.
-
-### 2. Деплой (на Raspberry Pi)
-
-1. Зайдите на сервер.
-2. Обновите код и запустите скрипт деплоя:
-   ```bash
-   git pull
-   ./scripts/deploy.sh
-   ```
-   Скрипт попытается скачать образы из реестра. Если реестр недоступен или образы отсутствуют, он автоматически перейдет к локальной сборке (fallback).
-
-## Установка с нуля (curl)
-
-Скрипт установки скачивает релиз, настраивает `.env` и запускает проект.
+### 1) Build + Push образов (Dev-машина)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.1.0/scripts/install.sh \
-  | TAG=v4.1.0 INSTALL_DIR=/opt/mega_games bash
+cd /Users/colz/gitrepos/envs/mega_games
+TAG=4.2.0 docker compose build
+TAG=4.2.0 docker compose push
+```
+
+Быстрый вариант скриптом:
+
+```bash
+cd /Users/colz/gitrepos/envs/mega_games
+TAG=4.2.0 ./scripts/publish.sh
+```
+
+### 2) Обновление на Raspberry Pi
+
+```bash
+ssh pi '
+  set -euo pipefail
+  cd /home/colz/envs/mega_games
+  git checkout release-4.0
+  git pull --ff-only origin release-4.0
+  export TAG=4.2.0
+  docker compose pull
+  docker compose up -d --force-recreate
+  docker compose ps
+'
+```
+
+Быстрый вариант скриптом:
+
+```bash
+ssh pi 'cd /home/colz/envs/mega_games && TAG=4.2.0 ./scripts/deploy.sh'
+```
+
+### 3) Если нет доступа к Raspberry / вашему registry
+
+Запуск на любом Linux/macOS хосте с Docker (локальная сборка без registry):
+
+```bash
+git clone https://github.com/colzphml/mega_games.git
+cd mega_games
+cp .env.example .env
+# заполните токены и ключи в .env
+docker compose up -d --build
+```
+
+Обновление на таком хосте:
+
+```bash
+git pull --ff-only
+docker compose up -d --build --remove-orphans
+```
+
+## SSH Tunnel и URL-ы
+
+Если сервисы подняты на Raspberry и нужны локально:
+
+```bash
+ssh -N \
+  -L 8081:127.0.0.1:8081 \
+  -L 9000:127.0.0.1:9000 \
+  -L 3000:127.0.0.1:3000 \
+  pi
+```
+
+После туннеля:
+
+- Admin Panel: `http://localhost:8081`
+- Картинки MinIO: `http://localhost:9000/game-images/...`
+- Grafana: `http://localhost:3000`
+
+Если вы в одной сети с Raspberry и порты открыты:
+
+- Admin Panel: `http://<RASPBERRY_IP>:8081`
+- Картинки MinIO: `http://<RASPBERRY_IP>:9000/game-images/...`
+- Grafana: `http://<RASPBERRY_IP>:3000`
+
+## MinIO: доступ к картинкам
+
+Для открытия прямых ссылок на объекты нужен публичный download policy для bucket `game-images`:
+
+```bash
+docker compose exec -T minio sh -lc '
+  mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" &&
+  mc anonymous set download local/game-images &&
+  mc anonymous get local/game-images
+'
+```
+
+## Установка через curl
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.2.0/scripts/install.sh \
+  | TAG=v4.2.0 INSTALL_DIR=/opt/mega_games bash
 ```
 
 Параметры:
-- `TAG`: версия релиза (git tag).
-- `INSTALL_DIR`: куда установить проект.
-- `NONINTERACTIVE=1`: пропустить вопросы (если `.env` уже создан или устраивают дефолты).
 
-## Admin Panel
-
-Доступна на порту `8081`.
-- **Unified Status**: Единая таблица всех сообщений. Отображает путь сообщения через все сервисы, ошибки, Game ID и ссылки на изображения.
-- **Teams**: Управление списком команд (добавление, редактирование).
-- **Logs**: Встроенный дашборд Grafana (Loki).
-
-*Примечание:* Если вы используете SSH-туннель (порт 8081), для работы логов нужно пробросить и порт 3000 (Grafana):
-```bash
-ssh -L 8081:localhost:8081 -L 3000:localhost:3000 pi@192.168.0.61
-```
-
-## Быстрый старт (локально)
-
-1) Скопировать `.env.example` в `.env` и заполнить токены Discord/Telegram.
-2) Запуск:
-   ```bash
-   docker compose up -d
-   ```
-3) (Опционально) Selenium: `COMPOSE_PROFILES=selenium docker compose up -d`
+- `TAG` — git tag релиза.
+- `INSTALL_DIR` — путь установки.
+- `NONINTERACTIVE=1` — без интерактива.
 
 ## Полезные команды
 
-Посмотреть логи:
+Логи:
+
 ```bash
 docker compose logs -f <service>
 ```
 
-Проверить health:
+Healthcheck:
+
 ```bash
 docker compose exec <service> wget -qO- http://127.0.0.1:8080/health
 ```
 
-Kafka Consumer:
+Kafka consumer:
+
 ```bash
-docker compose exec kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic <topic> --from-beginning
+docker compose exec kafka kafka-console-consumer \
+  --bootstrap-server kafka:9092 \
+  --topic <topic> \
+  --from-beginning
 ```
 
-## Где что хранится
+## Хранилища
 
-- **Postgres**: статусы обработки всех сервисов.
-- **MongoDB**: метаданные изображений.
-- **MinIO**: файлы изображений.
-- **Loki**: логи контейнеров.
-
-## Траблшутинг
-
-- **AccessDenied на MinIO**: проверьте bucket policy (public read) или используйте временные ссылки.
-- **Grafana "refused to connect"**: убедитесь, что порт 3000 проброшен или доступен с вашего IP.
-- **MongoDB Illegal instruction (ARM)**: используйте `MONGO_IMAGE` в `.env` для совместимой версии (если требуется).
+- Postgres — статусы обработки.
+- MongoDB — метаданные game image.
+- MinIO — файлы картинок.
+- Loki — логи контейнеров.

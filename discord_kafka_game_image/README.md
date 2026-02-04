@@ -107,3 +107,21 @@ docker compose exec discord-kafka-game-image wget -qO- http://127.0.0.1:8080/hea
 - **AccessDenied в MinIO** — сделай бакет публичным или используй `mc share download`.
 - **Картинки дублируются** — проверь `PROCESS_RETRY_INTERVAL` и статус в Postgres/Mongo.
 - **gochrome выглядит как headless** — проверь реальный `GAME_IMAGE_FETCHER_TYPE` внутри контейнера.
+
+## Операционные команды (v4.2.0+)
+
+Сборка и публикация только этого сервиса:
+
+```bash
+TAG=4.2.0 docker compose build discord-kafka-game-image
+TAG=4.2.0 docker compose push discord-kafka-game-image
+```
+
+Обновление на целевом хосте:
+
+```bash
+TAG=4.2.0 docker compose pull discord-kafka-game-image
+TAG=4.2.0 docker compose up -d --no-deps --force-recreate discord-kafka-game-image
+```
+
+Общий release/deploy workflow, URL-ы и SSH-туннели см. в корневом `README.md`.

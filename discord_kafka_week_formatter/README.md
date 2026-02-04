@@ -47,3 +47,21 @@ docker compose exec discord-kafka-week-formatter wget -qO- http://127.0.0.1:8080
 
 - **Нет расписания** — наполни `teams` и `schedule_games` через `discord_tools`.
 - **Не уходит Post Season** — поддерживается `Pre/Regular/Post Season`.
+
+## Операционные команды (v4.2.0+)
+
+Сборка и публикация только этого сервиса:
+
+```bash
+TAG=4.2.0 docker compose build discord-kafka-week-formatter
+TAG=4.2.0 docker compose push discord-kafka-week-formatter
+```
+
+Обновление на целевом хосте:
+
+```bash
+TAG=4.2.0 docker compose pull discord-kafka-week-formatter
+TAG=4.2.0 docker compose up -d --no-deps --force-recreate discord-kafka-week-formatter
+```
+
+Общий release/deploy workflow и SSH-туннели см. в корневом `README.md`.

@@ -48,3 +48,21 @@ docker compose exec discord-kafka-processor wget -qO- http://127.0.0.1:8080/heal
 
 - **Пустые embeds** — увеличь `DISCORD_EMBED_WARMUP` и `DISCORD_FETCH_MAX_ATTEMPTS`.
 - **`Unknown Topic Or Partition`** — проверь, что `kafka-init` создал топики.
+
+## Операционные команды (v4.2.0+)
+
+Сборка и публикация только этого сервиса:
+
+```bash
+TAG=4.2.0 docker compose build discord-kafka-processor
+TAG=4.2.0 docker compose push discord-kafka-processor
+```
+
+Обновление на целевом хосте:
+
+```bash
+TAG=4.2.0 docker compose pull discord-kafka-processor
+TAG=4.2.0 docker compose up -d --no-deps --force-recreate discord-kafka-processor
+```
+
+Общий release/deploy workflow и SSH-туннели см. в корневом `README.md`.
