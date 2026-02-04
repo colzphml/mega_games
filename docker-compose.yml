@@ -84,6 +84,7 @@ services:
       - megagames-net
 
   discord-kafka-listener:
+    image: 192.168.0.61:5000/mega_games/discord-kafka-listener:${TAG:-4.1.0}
     build:
       context: .
       dockerfile: discord_kafka_listener/Dockerfile
@@ -185,6 +186,7 @@ services:
       - megagames-net
 
   discord-kafka-processor:
+    image: 192.168.0.61:5000/mega_games/discord-kafka-processor:${TAG:-4.1.0}
     build:
       context: .
       dockerfile: discord_kafka_processor/Dockerfile
@@ -213,6 +215,7 @@ services:
       - megagames-net
 
   discord-kafka-week-formatter:
+    image: 192.168.0.61:5000/mega_games/discord-kafka-week-formatter:${TAG:-4.1.0}
     build:
       context: .
       dockerfile: discord_kafka_week_formatter/Dockerfile
@@ -241,6 +244,7 @@ services:
       - megagames-net
 
   discord-kafka-game-image:
+    image: 192.168.0.61:5000/mega_games/discord-kafka-game-image:${TAG:-4.1.0}
     build:
       context: .
       dockerfile: discord_kafka_game_image/Dockerfile
@@ -275,6 +279,7 @@ services:
       - megagames-net
 
   discord-kafka-telegram-week-sender:
+    image: 192.168.0.61:5000/mega_games/discord-kafka-telegram-week-sender:${TAG:-4.1.0}
     build:
       context: .
       dockerfile: discord_kafka_telegram_week_sender/Dockerfile
@@ -303,6 +308,7 @@ services:
       - megagames-net
 
   discord-kafka-telegram-game-sender:
+    image: 192.168.0.61:5000/mega_games/discord-kafka-telegram-game-sender:${TAG:-4.1.0}
     build:
       context: .
       dockerfile: discord_kafka_telegram_game_sender/Dockerfile
@@ -333,6 +339,7 @@ services:
       - megagames-net
 
   admin-panel:
+    image: 192.168.0.61:5000/mega_games/admin-panel:${TAG:-4.1.0}
     build:
       context: .
       dockerfile: Dockerfile.admin
