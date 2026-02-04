@@ -43,7 +43,13 @@
                 <td>{{.TelegramWeekStatus}}</td>
                 <td>{{.TelegramGameStatus}}</td>
                 <td>{{if .Errors}}<span style="color: #b42318; font-weight: 600;" title="{{.Errors}}">Errors</span>{{else}}<small style="color: #888;">-</small>{{end}}</td>
-                <td>{{if .DropReason}}<span style="color: #b42318;">{{.DropReason}}</span>{{else}}<small style="color: #888;">-</small>{{end}}</td>
+                <td>
+                    {{if .DropReason}}
+                    <span style="color: #b42318; display: inline-block; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{.DropReason}}">{{.DropReason}}</span>
+                    {{else}}
+                    <small style="color: #888;">-</small>
+                    {{end}}
+                </td>
             </tr>
             {{end}}
         </tbody>

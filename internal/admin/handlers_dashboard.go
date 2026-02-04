@@ -3,7 +3,9 @@ package admin
 import (
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -90,7 +92,7 @@ func (h *DashboardHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			TelegramWeekStatus:  message.TelegramWeekStatus,
 			TelegramGameStatus:  message.TelegramGameStatus,
 			GameID:              fallbackValue(message.GameID, "n/a"),
-			ImageURL:            message.ImageURL,
+			ImageURL:            resolveImageURL(r, message.ImageURL),
 			WeekText:            fallbackValue(message.WeekText, "n/a"),
 			Errors:              errorsText,
 			DropReason:          fallbackValue(message.DropReason, ""),
@@ -119,4 +121,45 @@ func fallbackValue(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func resolveImageURL(r *http.Request, raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	u, err := url.Parse(trimmed)
+	if err != nil || u.Host == "" {
+		return trimmed
+	}
+
+	host := strings.ToLower(u.Hostname())
+	switch host {
+	case "localhost", "127.0.0.1", "::1", "minio":
+		clientHost := requestHostname(r.Host)
+		if clientHost == "" {
+			return trimmed
+		}
+		port := u.Port()
+		if port == "" {
+			port = "9000"
+		}
+		u.Host = net.JoinHostPort(clientHost, port)
+		return u.String()
+	default:
+		return trimmed
+	}
+}
+
+func requestHostname(hostport string) string {
+	trimmed := strings.TrimSpace(hostport)
+	if trimmed == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(trimmed); err == nil {
+		return host
+	}
+	// Host may come without port.
+	return trimmed
 }
