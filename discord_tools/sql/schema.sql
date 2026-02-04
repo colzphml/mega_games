@@ -17,3 +17,6 @@ CREATE TABLE IF NOT EXISTS schedule_games (
 
 CREATE INDEX IF NOT EXISTS schedule_games_lookup_idx
     ON schedule_games (season_index, stage, week_index);
+
+CREATE UNIQUE INDEX IF NOT EXISTS schedule_games_unique_idx
+    ON schedule_games (season_index, stage, week_index, home_team, away_team);
