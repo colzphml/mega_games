@@ -1,11 +1,15 @@
 package gochrome
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/color"
+	"image/png"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,16 +20,22 @@ import (
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+	"github.com/fogleman/gg"
+	"github.com/golang/freetype/truetype"
 	"github.com/rs/zerolog"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/font/gofont/goregular"
 
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/config"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/types"
 )
 
 const (
-	defaultTimeout    = 140 * time.Second
-	defaultAPITimeout = 15 * time.Second
-	defaultAssetsWait = 60 * time.Second
+	defaultTimeout     = 140 * time.Second
+	defaultAPITimeout  = 15 * time.Second
+	defaultMetaTimeout = 15 * time.Second
+	defaultAssetsWait  = 60 * time.Second
 
 	defaultViewportW  = 2600
 	defaultViewportH  = 1500
@@ -75,10 +85,15 @@ func (c *Client) Fetch(ctx context.Context, gameID string) (types.Result, error)
 	}
 
 	apiURL := fmt.Sprintf("%s/api/leagues/%s/games/%s/recap/", c.baseURL, url.PathEscape(league), url.PathEscape(gameID))
+	metaURL := fmt.Sprintf("%s/api/leagues/%s/games/%s/", c.baseURL, url.PathEscape(league), url.PathEscape(gameID))
 
 	// 1) API precheck (fast fail)
 	recap, err := fetchRecapJSON(apiURL, defaultUserAgent, defaultAPITimeout)
 	if err != nil {
+		if isRecoverablePrecheckError(err) {
+			log.Warn().Err(err).Str("game_id", gameID).Msg("recap precheck degraded, fallback to metadata card")
+			return buildFallbackResult(metaURL, gameURL, league, gameID)
+		}
 		return types.Result{}, fmt.Errorf("api precheck failed: %w", err)
 	}
 	if recap.Game.PK == 0 {
@@ -91,7 +106,8 @@ func (c *Client) Fetch(ctx context.Context, gameID string) (types.Result, error)
 	// 2) Headless Chrome screenshot
 	pngBytes, err := screenshotRecapWrapper(ctx, gameURL, defaultTimeout, c.headless, defaultSleepAfter, defaultAssetsWait, defaultViewportW, defaultViewportH)
 	if err != nil {
-		return types.Result{}, fmt.Errorf("screenshot failed: %w", err)
+		log.Warn().Err(err).Str("game_id", gameID).Msg("screenshot failed, fallback to metadata card")
+		return buildFallbackResult(metaURL, gameURL, league, gameID)
 	}
 	if len(pngBytes) == 0 {
 		return types.Result{}, fmt.Errorf("empty screenshot bytes")
@@ -108,6 +124,160 @@ func (c *Client) Fetch(ctx context.Context, gameID string) (types.Result, error)
 		ContentType: "image/png",
 		Image:       pngBytes,
 	}, nil
+}
+
+type GameMetaResponse struct {
+	PK        int      `json:"pk"`
+	WeekIndex int      `json:"weekIndex"`
+	Status    int      `json:"status"`
+	HomeScore int      `json:"homeScore"`
+	AwayScore int      `json:"awayScore"`
+	HomeTeam  TeamMeta `json:"homeTeam"`
+	AwayTeam  TeamMeta `json:"awayTeam"`
+}
+
+type TeamMeta struct {
+	DisplayName string `json:"displayName"`
+	AbbrName    string `json:"abbrName"`
+	CityName    string `json:"cityName"`
+}
+
+func buildFallbackResult(metaURL, gameURL, league, gameID string) (types.Result, error) {
+	meta, err := fetchGameMetaJSON(metaURL, defaultUserAgent, defaultMetaTimeout)
+	if err != nil {
+		return types.Result{}, fmt.Errorf("fallback metadata fetch failed: %w", err)
+	}
+	imageBytes, err := renderFallbackCard(meta, league, gameID)
+	if err != nil {
+		return types.Result{}, fmt.Errorf("render fallback card: %w", err)
+	}
+	return types.Result{
+		GameURL:     gameURL,
+		ContentType: "image/png",
+		Image:       imageBytes,
+	}, nil
+}
+
+func fetchGameMetaJSON(apiURL, userAgent string, to time.Duration) (*GameMetaResponse, error) {
+	client := &http.Client{Timeout: to}
+
+	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("unexpected status %d from game API; body=%q", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	dec := json.NewDecoder(resp.Body)
+	var meta GameMetaResponse
+	if err := dec.Decode(&meta); err != nil {
+		return nil, fmt.Errorf("decode game metadata: %w", err)
+	}
+	if meta.PK == 0 {
+		return nil, fmt.Errorf("empty game metadata")
+	}
+	return &meta, nil
+}
+
+func renderFallbackCard(meta *GameMetaResponse, league, gameID string) ([]byte, error) {
+	const (
+		width  = 1600
+		height = 900
+	)
+
+	dc := gg.NewContext(width, height)
+	bg := gg.NewLinearGradient(0, 0, float64(width), float64(height))
+	bg.AddColorStop(0, color.RGBA{18, 24, 34, 255})
+	bg.AddColorStop(1, color.RGBA{38, 46, 62, 255})
+	dc.SetFillStyle(bg)
+	dc.DrawRectangle(0, 0, float64(width), float64(height))
+	dc.Fill()
+
+	dc.SetColor(color.RGBA{230, 236, 245, 255})
+	dc.SetFontFace(scoreFont(44))
+	dc.DrawStringAnchored(fmt.Sprintf("%s Recap", strings.ToUpper(strings.TrimSpace(league))), 90, 90, 0, 0.5)
+
+	status := "Final"
+	if meta.Status <= 1 {
+		status = "In Progress"
+	}
+	dc.SetFontFace(scoreFont(26))
+	dc.SetColor(color.RGBA{180, 192, 210, 255})
+	dc.DrawStringAnchored(fmt.Sprintf("Week %d | Game %s | %s", meta.WeekIndex+1, gameID, status), 90, 140, 0, 0.5)
+
+	home := teamLabel(meta.HomeTeam)
+	away := teamLabel(meta.AwayTeam)
+
+	dc.SetColor(color.RGBA{245, 248, 252, 255})
+	dc.SetFontFace(scoreFont(70))
+	dc.DrawStringAnchored(away, 320, 340, 0.5, 0.5)
+	dc.DrawStringAnchored(home, 1280, 340, 0.5, 0.5)
+
+	dc.SetColor(color.RGBA{255, 215, 106, 255})
+	dc.SetFontFace(scoreFont(180))
+	dc.DrawStringAnchored(fmt.Sprintf("%d", meta.AwayScore), 640, 530, 0.5, 0.5)
+	dc.DrawStringAnchored("-", 800, 530, 0.5, 0.5)
+	dc.DrawStringAnchored(fmt.Sprintf("%d", meta.HomeScore), 960, 530, 0.5, 0.5)
+
+	dc.SetColor(color.RGBA{170, 182, 200, 255})
+	dc.SetFontFace(scoreFont(24))
+	dc.DrawStringAnchored("Fallback card: source recap endpoint timed out from current runtime network", float64(width)/2, 820, 0.5, 0.5)
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, dc.Image()); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func teamLabel(t TeamMeta) string {
+	if v := strings.TrimSpace(t.AbbrName); v != "" {
+		return strings.ToUpper(v)
+	}
+	if v := strings.TrimSpace(t.DisplayName); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(t.CityName); v != "" {
+		return v
+	}
+	return "TEAM"
+}
+
+func scoreFont(size float64) font.Face {
+	tt, err := truetype.Parse(goregular.TTF)
+	if err != nil {
+		return basicfont.Face7x13
+	}
+	return truetype.NewFace(tt, &truetype.Options{
+		Size: size,
+		DPI:  72,
+	})
+}
+
+func isRecoverablePrecheckError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "client.timeout") || strings.Contains(msg, "context deadline exceeded") || strings.Contains(msg, "unexpected eof")
 }
 
 func saveScreenshot(dir, gameID string, data []byte) error {
