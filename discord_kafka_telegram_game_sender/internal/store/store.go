@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	statusNew       = "new"
-	statusProcessed = "processed"
+	statusNew        = "new"
+	statusInProgress = "in_progress"
+	statusProcessed  = "processed"
 )
 
 type GameMessage struct {
@@ -129,7 +130,7 @@ func (s *Store) ListPending(ctx context.Context, limit int, retryAfter time.Dura
 }
 
 func (s *Store) TouchAttempt(ctx context.Context, messageID string) error {
-	res, err := s.pool.Exec(ctx, `UPDATE telegram_game_status SET last_attempt_at = NOW(), updated_at = NOW() WHERE message_id = $1`, messageID)
+	res, err := s.pool.Exec(ctx, `UPDATE telegram_game_status SET status = $1, last_attempt_at = NOW(), updated_at = NOW() WHERE message_id = $2`, statusInProgress, messageID)
 	if err != nil {
 		return fmt.Errorf("touch attempt: %w", err)
 	}
@@ -141,7 +142,7 @@ func (s *Store) TouchAttempt(ctx context.Context, messageID string) error {
 
 func (s *Store) RecordAttempt(ctx context.Context, messageID string, errMsg string) (GameMessage, error) {
 	var msg GameMessage
-	row := s.pool.QueryRow(ctx, `UPDATE telegram_game_status SET attempts = attempts + 1, last_error = $1, last_attempt_at = NOW(), updated_at = NOW() WHERE message_id = $2 RETURNING message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload`, errMsg, messageID)
+	row := s.pool.QueryRow(ctx, `UPDATE telegram_game_status SET status = $1, attempts = attempts + 1, last_error = $2, last_attempt_at = NOW(), updated_at = NOW() WHERE message_id = $3 RETURNING message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload`, statusNew, errMsg, messageID)
 	if err := row.Scan(&msg.ID, &msg.Status, &msg.Attempts, &msg.CreatedAt, &msg.LastError, &msg.LastAttempt, &msg.Payload); err != nil {
 		return GameMessage{}, fmt.Errorf("record attempt: %w", err)
 	}
@@ -176,4 +177,8 @@ func (s *Store) MoveToFailed(ctx context.Context, messageID string, details map[
 
 func StatusProcessed() string {
 	return statusProcessed
+}
+
+func StatusInProgress() string {
+	return statusInProgress
 }

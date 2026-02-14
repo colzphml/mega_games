@@ -131,6 +131,10 @@ func (p *Processor) consumeLoop(ctx context.Context) error {
 			p.log.Info().Str("message_id", messageID).Msg("game message already processed")
 			continue
 		}
+		if stored.Status == store.StatusInProgress() {
+			p.log.Info().Str("message_id", messageID).Msg("game message already in progress")
+			continue
+		}
 		if stored.Attempts >= p.cfg.MaxAttempts {
 			if err := p.store.MoveToFailed(ctx, messageID, kafkaDetails(msg, "max attempts on consume")); err != nil {
 				p.log.Error().Err(err).Str("message_id", messageID).Msg("failed to move game message to failed table")
