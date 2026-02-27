@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	statusNew       = "new"
-	statusProcessed = "processed"
+	statusNew        = "new"
+	statusInProgress = "in_progress"
+	statusProcessed  = "processed"
 )
 
 type GamePayload struct {
@@ -132,10 +133,21 @@ func (s *Store) ListPending(ctx context.Context, limit int, retryAfter time.Dura
 	filter := bson.M{"status": statusNew}
 	if retryAfter > 0 {
 		cutoff := time.Now().Add(-retryAfter)
-		filter["$or"] = []bson.M{
-			{"last_attempt_at": bson.M{"$exists": false}},
-			{"last_attempt_at": nil},
-			{"last_attempt_at": bson.M{"$lte": cutoff}},
+		filter = bson.M{
+			"$or": []bson.M{
+				{
+					"status": statusNew,
+					"$or": []bson.M{
+						{"last_attempt_at": bson.M{"$exists": false}},
+						{"last_attempt_at": nil},
+						{"last_attempt_at": bson.M{"$lte": cutoff}},
+					},
+				},
+				{
+					"status":          statusInProgress,
+					"last_attempt_at": bson.M{"$lte": cutoff},
+				},
+			},
 		}
 	}
 
@@ -162,6 +174,7 @@ func (s *Store) RecordAttempt(ctx context.Context, messageID string, errMsg stri
 	update := bson.M{
 		"$inc": bson.M{"attempts": 1},
 		"$set": bson.M{
+			"status":          statusNew,
 			"last_error":      errMsg,
 			"last_attempt_at": time.Now(),
 			"updated_at":      time.Now(),
@@ -174,19 +187,35 @@ func (s *Store) RecordAttempt(ctx context.Context, messageID string, errMsg stri
 	return msg, nil
 }
 
-func (s *Store) TouchAttempt(ctx context.Context, messageID string) error {
+func (s *Store) TouchAttempt(ctx context.Context, messageID string, retryAfter time.Duration) error {
+	cutoff := time.Now().Add(-retryAfter)
+	filter := bson.M{
+		"_id": messageID,
+		"$or": []bson.M{
+			{"status": statusNew},
+			{
+				"status": statusInProgress,
+				"$or": []bson.M{
+					{"last_attempt_at": bson.M{"$exists": false}},
+					{"last_attempt_at": nil},
+					{"last_attempt_at": bson.M{"$lte": cutoff}},
+				},
+			},
+		},
+	}
 	update := bson.M{
 		"$set": bson.M{
+			"status":          statusInProgress,
 			"last_attempt_at": time.Now(),
 			"updated_at":      time.Now(),
 		},
 	}
-	res, err := s.collection.UpdateByID(ctx, messageID, update)
+	res, err := s.collection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return fmt.Errorf("touch attempt: %w", err)
 	}
 	if res.MatchedCount == 0 {
-		return fmt.Errorf("touch attempt: message not found")
+		return fmt.Errorf("touch attempt: message not eligible")
 	}
 	return nil
 }
@@ -246,4 +275,8 @@ func (s *Store) MoveToFailed(ctx context.Context, messageID string, details map[
 
 func StatusProcessed() string {
 	return statusProcessed
+}
+
+func StatusInProgress() string {
+	return statusInProgress
 }

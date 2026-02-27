@@ -162,6 +162,10 @@ func (p *Processor) consumeLoop(ctx context.Context) error {
 			p.log.Info().Str("message_id", messageID).Msg("game message already processed")
 			continue
 		}
+		if stored.Status == store.StatusInProgress() || pgMsg.Status == pgstore.StatusInProgress() {
+			p.log.Info().Str("message_id", messageID).Msg("game message already in progress")
+			continue
+		}
 		if maxInt(stored.Attempts, pgMsg.Attempts) >= p.cfg.MaxAttempts {
 			if err := p.moveToFailed(ctx, messageID, kafkaDetails(msg, "max attempts on consume")); err != nil {
 				p.log.Error().Err(err).Str("message_id", messageID).Msg("failed to move game message to failed storage")
@@ -175,7 +179,8 @@ func (p *Processor) consumeLoop(ctx context.Context) error {
 
 func (p *Processor) processMessage(ctx context.Context, msg store.GameMessage, details map[string]any) {
 	if err := p.touchAttempt(ctx, msg.ID); err != nil {
-		p.log.Warn().Err(err).Str("message_id", msg.ID).Msg("failed to mark attempt start")
+		p.log.Info().Err(err).Str("message_id", msg.ID).Msg("game message not eligible for processing")
+		return
 	}
 	if err := p.handleMessage(ctx, msg); err != nil {
 		updated, updateErr := p.recordAttempt(ctx, msg.ID, err.Error())
@@ -359,10 +364,10 @@ func (p *Processor) ensurePostgres(ctx context.Context, messageID string, payloa
 }
 
 func (p *Processor) touchAttempt(ctx context.Context, messageID string) error {
-	if err := p.pg.TouchAttempt(ctx, messageID); err != nil {
+	if err := p.pg.TouchAttempt(ctx, messageID, p.cfg.ProcessRetryInterval); err != nil {
 		return err
 	}
-	return p.store.TouchAttempt(ctx, messageID)
+	return p.store.TouchAttempt(ctx, messageID, p.cfg.ProcessRetryInterval)
 }
 
 func (p *Processor) recordAttempt(ctx context.Context, messageID string, errMsg string) (store.GameMessage, error) {

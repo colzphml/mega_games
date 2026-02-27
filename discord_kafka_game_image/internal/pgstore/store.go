@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	statusNew       = "new"
-	statusProcessed = "processed"
+	statusNew        = "new"
+	statusInProgress = "in_progress"
+	statusProcessed  = "processed"
 )
 
 type Message struct {
@@ -104,13 +105,27 @@ func (s *Store) getMessage(ctx context.Context, messageID string) (Message, erro
 	return msg, nil
 }
 
-func (s *Store) TouchAttempt(ctx context.Context, messageID string) error {
-	res, err := s.pool.Exec(ctx, `UPDATE game_image_status SET last_attempt_at = NOW(), updated_at = NOW() WHERE message_id = $1`, messageID)
+func (s *Store) TouchAttempt(ctx context.Context, messageID string, retryAfter time.Duration) error {
+	cutoff := time.Now().Add(-retryAfter)
+	res, err := s.pool.Exec(
+		ctx,
+		`UPDATE game_image_status
+		 SET status = $2, last_attempt_at = NOW(), updated_at = NOW()
+		 WHERE message_id = $1
+		   AND (
+			status = $3
+			OR (status = $2 AND (last_attempt_at IS NULL OR last_attempt_at <= $4))
+		   )`,
+		messageID,
+		statusInProgress,
+		statusNew,
+		cutoff,
+	)
 	if err != nil {
 		return fmt.Errorf("touch attempt: %w", err)
 	}
 	if res.RowsAffected() == 0 {
-		return fmt.Errorf("touch attempt: message not found")
+		return fmt.Errorf("touch attempt: message not eligible")
 	}
 	return nil
 }
@@ -164,4 +179,8 @@ func (s *Store) MoveToFailed(ctx context.Context, messageID string, details map[
 
 func StatusProcessed() string {
 	return statusProcessed
+}
+
+func StatusInProgress() string {
+	return statusInProgress
 }

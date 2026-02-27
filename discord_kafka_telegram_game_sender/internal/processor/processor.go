@@ -147,8 +147,9 @@ func (p *Processor) consumeLoop(ctx context.Context) error {
 }
 
 func (p *Processor) processMessage(ctx context.Context, msg store.GameMessage, details map[string]any) {
-	if err := p.store.TouchAttempt(ctx, msg.ID); err != nil {
-		p.log.Warn().Err(err).Str("message_id", msg.ID).Msg("failed to mark attempt start")
+	if err := p.store.TouchAttempt(ctx, msg.ID, p.cfg.ProcessRetryInterval); err != nil {
+		p.log.Info().Err(err).Str("message_id", msg.ID).Msg("game message not eligible for processing")
+		return
 	}
 	if err := p.handleMessage(ctx, msg); err != nil {
 		updated, updateErr := p.store.RecordAttempt(ctx, msg.ID, err.Error())

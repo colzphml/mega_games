@@ -109,7 +109,7 @@ func (s *Store) ListPending(ctx context.Context, limit int, retryAfter time.Dura
 	var err error
 	if retryAfter > 0 {
 		cutoff := time.Now().Add(-retryAfter)
-		rows, err = s.pool.Query(ctx, `SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload FROM telegram_game_status WHERE status = $1 AND (last_attempt_at IS NULL OR last_attempt_at <= $2) ORDER BY created_at ASC LIMIT $3`, statusNew, cutoff, limit)
+		rows, err = s.pool.Query(ctx, `SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload FROM telegram_game_status WHERE (status = $1 AND (last_attempt_at IS NULL OR last_attempt_at <= $3)) OR (status = $2 AND last_attempt_at <= $3) ORDER BY created_at ASC LIMIT $4`, statusNew, statusInProgress, cutoff, limit)
 	} else {
 		rows, err = s.pool.Query(ctx, `SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload FROM telegram_game_status WHERE status = $1 ORDER BY created_at ASC LIMIT $2`, statusNew, limit)
 	}
@@ -129,13 +129,27 @@ func (s *Store) ListPending(ctx context.Context, limit int, retryAfter time.Dura
 	return messages, rows.Err()
 }
 
-func (s *Store) TouchAttempt(ctx context.Context, messageID string) error {
-	res, err := s.pool.Exec(ctx, `UPDATE telegram_game_status SET status = $1, last_attempt_at = NOW(), updated_at = NOW() WHERE message_id = $2`, statusInProgress, messageID)
+func (s *Store) TouchAttempt(ctx context.Context, messageID string, retryAfter time.Duration) error {
+	cutoff := time.Now().Add(-retryAfter)
+	res, err := s.pool.Exec(
+		ctx,
+		`UPDATE telegram_game_status
+		 SET status = $2, last_attempt_at = NOW(), updated_at = NOW()
+		 WHERE message_id = $1
+		   AND (
+			status = $3
+			OR (status = $2 AND (last_attempt_at IS NULL OR last_attempt_at <= $4))
+		   )`,
+		messageID,
+		statusInProgress,
+		statusNew,
+		cutoff,
+	)
 	if err != nil {
 		return fmt.Errorf("touch attempt: %w", err)
 	}
 	if res.RowsAffected() == 0 {
-		return fmt.Errorf("touch attempt: message not found")
+		return fmt.Errorf("touch attempt: message not eligible")
 	}
 	return nil
 }
