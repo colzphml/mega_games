@@ -352,6 +352,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.admin
+    restart: unless-stopped
     ports:
       - "8002:8081"
     env_file:
