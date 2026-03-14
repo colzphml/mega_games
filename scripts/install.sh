@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/colzphml/mega_games.git"
-DEFAULT_TAG="v4.3.0"
+DEFAULT_TAG="v4.3.1"
 DEFAULT_INSTALL_DIR="/opt/mega_games"
 
 TAG="${TAG:-$DEFAULT_TAG}"

@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,14 +24,24 @@ func New(token, chatID string, log zerolog.Logger) (*Client, error) {
 		return nil, fmt.Errorf("parse chat id: %w", err)
 	}
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.ForceAttemptHTTP2 = false
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	transport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:     false,
+		Protocols:             protocols,
+	}
 	bot, err := tgbotapi.NewBotAPIWithClient(token, &http.Client{
 		Timeout:   2 * time.Minute,
 		Transport: transport,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create bot api: %w", err)
+		return nil, fmt.Errorf("create bot api: %s", redactToken(err.Error(), token))
 	}
 	return &Client{bot: bot, chatID: parsedID, log: log}, nil
 }

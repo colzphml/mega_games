@@ -2,7 +2,7 @@
 set -e
 
 # Default tag if not set
-export TAG="${TAG:-4.3.0}"
+export TAG="${TAG:-4.3.1}"
 
 echo "Deploying version: $TAG"
 

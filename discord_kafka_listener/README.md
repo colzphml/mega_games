@@ -57,20 +57,20 @@ docker compose exec kafka kafka-console-consumer --bootstrap-server kafka:9092 -
 - **`discord not ready` в health** — проверь токен и права бота на канал.
 - **Нет сообщений в Kafka** — убедись, что бот видит канал и что `KAFKA_BROKERS` доступен.
 
-## Операционные команды (v4.3.0+)
+## Операционные команды (v4.3.1+)
 
 Сборка и публикация только этого сервиса:
 
 ```bash
-TAG=4.3.0 docker compose build discord-kafka-listener
-TAG=4.3.0 docker compose push discord-kafka-listener
+TAG=4.3.1 docker compose build discord-kafka-listener
+TAG=4.3.1 docker compose push discord-kafka-listener
 ```
 
 Обновление на целевом хосте:
 
 ```bash
-TAG=4.3.0 docker compose pull discord-kafka-listener
-TAG=4.3.0 docker compose up -d --no-deps --force-recreate discord-kafka-listener
+TAG=4.3.1 docker compose pull discord-kafka-listener
+TAG=4.3.1 docker compose up -d --no-deps --force-recreate discord-kafka-listener
 ```
 
 Общий release/deploy workflow и SSH-туннели см. в корневом `README.md`.
