@@ -43,20 +43,20 @@ docker compose exec discord-kafka-telegram-game-sender wget -qO- http://127.0.0.
 - **Не скачивается объект из MinIO** — проверь `MINIO_ENDPOINT` и доступность бакета.
 - **Сообщения не приходят** — проверь `TELEGRAM_GAME_CHAT_ID` и права бота.
 
-## Операционные команды (v4.2.0+)
+## Операционные команды (v4.3.0+)
 
 Сборка и публикация только этого сервиса:
 
 ```bash
-TAG=4.2.0 docker compose build discord-kafka-telegram-game-sender
-TAG=4.2.0 docker compose push discord-kafka-telegram-game-sender
+TAG=4.3.0 docker compose build discord-kafka-telegram-game-sender
+TAG=4.3.0 docker compose push discord-kafka-telegram-game-sender
 ```
 
 Обновление на целевом хосте:
 
 ```bash
-TAG=4.2.0 docker compose pull discord-kafka-telegram-game-sender
-TAG=4.2.0 docker compose up -d --no-deps --force-recreate discord-kafka-telegram-game-sender
+TAG=4.3.0 docker compose pull discord-kafka-telegram-game-sender
+TAG=4.3.0 docker compose up -d --no-deps --force-recreate discord-kafka-telegram-game-sender
 ```
 
 Общий release/deploy workflow и SSH-туннели см. в корневом `README.md`.

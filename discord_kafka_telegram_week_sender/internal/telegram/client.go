@@ -2,7 +2,10 @@ package telegram
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/rs/zerolog"
@@ -19,7 +22,13 @@ func New(token, chatID string, log zerolog.Logger) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse chat id: %w", err)
 	}
-	bot, err := tgbotapi.NewBotAPI(token)
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ForceAttemptHTTP2 = false
+	bot, err := tgbotapi.NewBotAPIWithClient(token, &http.Client{
+		Timeout:   2 * time.Minute,
+		Transport: transport,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create bot api: %w", err)
 	}
@@ -31,8 +40,15 @@ func (c *Client) SendWeekMessage(text string) error {
 	msg.DisableWebPagePreview = true
 	msg.ParseMode = "Markdown"
 	if _, err := c.bot.Send(msg); err != nil {
-		return fmt.Errorf("send telegram message: %w", err)
+		return fmt.Errorf("send telegram message: %s", redactToken(err.Error(), c.bot.Token))
 	}
 	c.log.Info().Str("message", text).Msg("week message sent")
 	return nil
+}
+
+func redactToken(message, token string) string {
+	if token == "" {
+		return message
+	}
+	return strings.ReplaceAll(message, token, "<redacted>")
 }

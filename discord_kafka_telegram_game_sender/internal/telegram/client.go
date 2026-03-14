@@ -3,7 +3,10 @@ package telegram
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/rs/zerolog"
@@ -20,7 +23,14 @@ func New(token, chatID string, log zerolog.Logger) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse chat id: %w", err)
 	}
-	bot, err := tgbotapi.NewBotAPI(token)
+
+	// Telegram photo uploads intermittently fail with HTTP/2 stream errors on Pi.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ForceAttemptHTTP2 = false
+	bot, err := tgbotapi.NewBotAPIWithClient(token, &http.Client{
+		Timeout:   2 * time.Minute,
+		Transport: transport,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create bot api: %w", err)
 	}
@@ -36,8 +46,15 @@ func (c *Client) SendGameImage(caption string, image []byte) error {
 	})
 	photo.Caption = caption
 	if _, err := c.bot.Send(photo); err != nil {
-		return fmt.Errorf("send telegram photo: %w", err)
+		return fmt.Errorf("send telegram photo: %s", redactToken(err.Error(), c.bot.Token))
 	}
 	c.log.Info().Str("caption", caption).Msg("game image sent")
 	return nil
+}
+
+func redactToken(message, token string) string {
+	if token == "" {
+		return message
+	}
+	return strings.ReplaceAll(message, token, "<redacted>")
 }

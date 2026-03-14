@@ -41,20 +41,20 @@ docker compose exec discord-kafka-telegram-week-sender wget -qO- http://127.0.0.
 - **`401 Unauthorized`** — неверный `TELEGRAM_BOT_TOKEN`.
 - **Сообщения не приходят** — проверь чат ID и права бота в чате.
 
-## Операционные команды (v4.2.0+)
+## Операционные команды (v4.3.0+)
 
 Сборка и публикация только этого сервиса:
 
 ```bash
-TAG=4.2.0 docker compose build discord-kafka-telegram-week-sender
-TAG=4.2.0 docker compose push discord-kafka-telegram-week-sender
+TAG=4.3.0 docker compose build discord-kafka-telegram-week-sender
+TAG=4.3.0 docker compose push discord-kafka-telegram-week-sender
 ```
 
 Обновление на целевом хосте:
 
 ```bash
-TAG=4.2.0 docker compose pull discord-kafka-telegram-week-sender
-TAG=4.2.0 docker compose up -d --no-deps --force-recreate discord-kafka-telegram-week-sender
+TAG=4.3.0 docker compose pull discord-kafka-telegram-week-sender
+TAG=4.3.0 docker compose up -d --no-deps --force-recreate discord-kafka-telegram-week-sender
 ```
 
 Общий release/deploy workflow и SSH-туннели см. в корневом `README.md`.
