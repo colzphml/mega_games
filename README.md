@@ -22,21 +22,21 @@ Go-микросервисы для цепочки Discord -> Kafka -> обраб
 4. `discord_kafka_game_image` -> `KAFKA_GAME_IMAGE_TOPIC` (+ MinIO/Mongo/Postgres)
 5. Telegram sender-сервисы отправляют в Telegram-чаты
 
-## Release Workflow (v4.3.1+)
+## Release Workflow (v4.3.2+)
 
 ### 1) Build + Push образов (Dev-машина)
 
 ```bash
 cd /Users/colz/gitrepos/envs/mega_games
-TAG=4.3.1 docker compose build
-TAG=4.3.1 docker compose push
+TAG=4.3.2 docker compose build
+TAG=4.3.2 docker compose push
 ```
 
 Быстрый вариант скриптом:
 
 ```bash
 cd /Users/colz/gitrepos/envs/mega_games
-TAG=4.3.1 ./scripts/publish.sh
+TAG=4.3.2 ./scripts/publish.sh
 ```
 
 ### 2) Обновление на Raspberry Pi
@@ -47,7 +47,7 @@ ssh pi '
   cd /home/colz/envs/mega_games
   git checkout release-4.0
   git pull --ff-only origin release-4.0
-  export TAG=4.3.1
+  export TAG=4.3.2
   docker compose pull
   docker compose up -d --force-recreate
   docker compose ps
@@ -57,7 +57,7 @@ ssh pi '
 Быстрый вариант скриптом:
 
 ```bash
-ssh pi 'cd /home/colz/envs/mega_games && TAG=4.3.1 ./scripts/deploy.sh'
+ssh pi 'cd /home/colz/envs/mega_games && TAG=4.3.2 ./scripts/deploy.sh'
 ```
 
 ### 3) Если нет доступа к Raspberry / вашему registry
@@ -118,8 +118,8 @@ docker compose exec -T minio sh -lc '
 ## Установка через curl
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.3.1/scripts/install.sh \
-  | TAG=v4.3.1 INSTALL_DIR=/opt/mega_games bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.3.2/scripts/install.sh \
+  | TAG=v4.3.2 INSTALL_DIR=/opt/mega_games bash
 ```
 
 Параметры:
