@@ -4,23 +4,61 @@ Go-микросервисы для цепочки Discord -> Kafka -> обраб
 
 ## Сервисы
 
-- `discord_kafka_listener` — читает Discord-канал, пишет ID сообщений в Kafka.
-- `discord_kafka_processor` — разбирает сообщения на week/game события.
-- `discord_kafka_week_formatter` — формирует текст недели для Telegram.
-- `discord_kafka_game_image` — генерирует/забирает recap-картинки, кладет в MinIO.
-- `discord_kafka_telegram_week_sender` — отправляет week-текст в Telegram.
-- `discord_kafka_telegram_game_sender` — отправляет game-картинки в Telegram.
-- `admin-panel` — статусы и админ-интерфейс.
-- `loki`, `promtail`, `grafana` — логирование и мониторинг.
+### Приложение
+
+- `discord-kafka-listener` — читает Discord-канал, пишет ID сообщений в Kafka.
+- `discord-kafka-processor` — разбирает сообщения на week/game события, пингует Discord API для healthcheck.
+- `discord-kafka-week-formatter` — формирует текст недели для Telegram.
+- `discord-kafka-game-image` — генерирует/забирает recap-картинки, кладет в MinIO.
+- `discord-kafka-telegram-week-sender` — отправляет week-текст в Telegram.
+- `discord-kafka-telegram-game-sender` — отправляет game-картинки в Telegram.
+- `admin-panel` — статусы и админ-интерфейс (`:8002`).
 - `autoheal` — перезапуск unhealthy контейнеров.
+
+### Инфраструктура
+
+- `zookeeper` — координация Kafka.
+- `kafka` — брокер сообщений (`:9092`).
+- `kafka-init` — служебный контейнер, создаёт Kafka топики при старте.
+- `postgres` — статусы обработки (`:5432`).
+- `mongo` — метаданные game image (`:27017`).
+- `minio` — файлы картинок, S3-совместимое хранилище (`:9000`, консоль `:9001`).
+- `loki` — агрегация логов (`:3100`).
+- `promtail` — сбор логов контейнеров и отправка в Loki.
+- `grafana` — дашборды (`:3000`).
+
+### Опциональный профиль `selenium`
+
+- `selenium-chrome` — Remote WebDriver для режима `GAME_IMAGE_FETCHER_TYPE=selenium`.
+
+```bash
+COMPOSE_PROFILES=selenium docker compose up -d
+```
 
 ## Data Flow
 
-1. `discord_kafka_listener` -> `KAFKA_INPUT_TOPIC`
-2. `discord_kafka_processor` -> `KAFKA_WEEK_TOPIC` и `KAFKA_GAME_TOPIC`
-3. `discord_kafka_week_formatter` -> `KAFKA_TELEGRAM_WEEK_TOPIC`
-4. `discord_kafka_game_image` -> `KAFKA_GAME_IMAGE_TOPIC` (+ MinIO/Mongo/Postgres)
-5. Telegram sender-сервисы отправляют в Telegram-чаты
+```
+Discord Channel
+      │
+      ▼
+discord-kafka-listener ──► KAFKA_INPUT_TOPIC (ID сообщений)
+      │
+      ▼
+discord-kafka-processor ──┬──► KAFKA_WEEK_TOPIC  (JSON: season, week)
+                          └──► KAFKA_GAME_TOPIC   (game_id)
+                                    │
+              ┌─────────────────────┘
+              │
+              ├──► discord-kafka-week-formatter ──► KAFKA_TELEGRAM_WEEK_TOPIC
+              │                                             │
+              │                                             ▼
+              │                              discord-kafka-telegram-week-sender ──► Telegram
+              │
+              └──► discord-kafka-game-image ──► KAFKA_GAME_IMAGE_TOPIC
+                         │  (+ MinIO/Mongo/Postgres)        │
+                                                            ▼
+                                         discord-kafka-telegram-game-sender ──► Telegram
+```
 
 ## Release Workflow (v4.3.2+)
 
@@ -79,31 +117,39 @@ docker compose up -d --build --remove-orphans
 
 ## SSH Tunnel и URL-ы
 
-Если сервисы подняты на Raspberry и нужны локально:
+Если сервисы подняты на Raspberry и нужны локально, пробросьте порты:
 
 ```bash
 ssh -N \
   -L 8002:127.0.0.1:8002 \
   -L 9000:127.0.0.1:9000 \
+  -L 9001:127.0.0.1:9001 \
   -L 3000:127.0.0.1:3000 \
   pi
 ```
 
 После туннеля:
 
-- Admin Panel: `http://localhost:8002`
-- Картинки MinIO: `http://localhost:9000/game-images/...`
-- Grafana: `http://localhost:3000`
+| Сервис | URL |
+|--------|-----|
+| Admin Panel | `http://localhost:8002` |
+| MinIO (прямые ссылки на картинки) | `http://localhost:9000/game-images/...` |
+| MinIO Console (управление) | `http://localhost:9001` |
+| Grafana | `http://localhost:3000` |
 
 Если вы в одной сети с Raspberry и порты открыты:
 
-- Admin Panel: `http://<RASPBERRY_IP>:8002`
-- Картинки MinIO: `http://<RASPBERRY_IP>:9000/game-images/...`
-- Grafana: `http://<RASPBERRY_IP>:3000`
+| Сервис | URL |
+|--------|-----|
+| Admin Panel | `http://<RASPBERRY_IP>:8002` |
+| MinIO (прямые ссылки на картинки) | `http://<RASPBERRY_IP>:9000/game-images/...` |
+| MinIO Console (управление) | `http://<RASPBERRY_IP>:9001` |
+| Grafana | `http://<RASPBERRY_IP>:3000` |
 
 ## MinIO: доступ к картинкам
 
-Для открытия прямых ссылок на объекты нужен публичный download policy для bucket `game-images`:
+Для открытия прямых ссылок на объекты нужен публичный download policy для bucket `game-images`.
+Выполняется один раз после первого запуска:
 
 ```bash
 docker compose exec -T minio sh -lc '
@@ -128,19 +174,19 @@ curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.3.2/scripts/
 
 ## Полезные команды
 
-Логи:
+Логи сервиса:
 
 ```bash
 docker compose logs -f <service>
 ```
 
-Healthcheck:
+Healthcheck сервиса вручную:
 
 ```bash
 docker compose exec <service> wget -qO- http://127.0.0.1:8080/health
 ```
 
-Kafka consumer:
+Kafka consumer (чтение топика):
 
 ```bash
 docker compose exec kafka kafka-console-consumer \
@@ -149,9 +195,17 @@ docker compose exec kafka kafka-console-consumer \
   --from-beginning
 ```
 
+Статус всех контейнеров:
+
+```bash
+docker compose ps
+```
+
 ## Хранилища
 
-- Postgres — статусы обработки.
-- MongoDB — метаданные game image.
-- MinIO — файлы картинок.
-- Loki — логи контейнеров.
+| Хранилище | Назначение | Порт |
+|-----------|-----------|------|
+| Postgres | Статусы обработки сообщений | `5432` |
+| MongoDB | Метаданные game image | `27017` |
+| MinIO | Файлы картинок (S3-совместимо) | `9000` (API), `9001` (консоль) |
+| Loki | Агрегация логов контейнеров | `3100` |
