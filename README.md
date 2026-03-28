@@ -27,7 +27,6 @@ Go-микросервисы для цепочки Discord -> Kafka -> обраб
 ### 1) Build + Push образов (Dev-машина)
 
 ```bash
-cd /Users/colz/gitrepos/envs/mega_games
 TAG=4.3.2 docker compose build
 TAG=4.3.2 docker compose push
 ```
@@ -35,7 +34,6 @@ TAG=4.3.2 docker compose push
 Быстрый вариант скриптом:
 
 ```bash
-cd /Users/colz/gitrepos/envs/mega_games
 TAG=4.3.2 ./scripts/publish.sh
 ```
 
@@ -85,7 +83,7 @@ docker compose up -d --build --remove-orphans
 
 ```bash
 ssh -N \
-  -L 8081:127.0.0.1:8081 \
+  -L 8002:127.0.0.1:8002 \
   -L 9000:127.0.0.1:9000 \
   -L 3000:127.0.0.1:3000 \
   pi
@@ -93,13 +91,13 @@ ssh -N \
 
 После туннеля:
 
-- Admin Panel: `http://localhost:8081`
+- Admin Panel: `http://localhost:8002`
 - Картинки MinIO: `http://localhost:9000/game-images/...`
 - Grafana: `http://localhost:3000`
 
 Если вы в одной сети с Raspberry и порты открыты:
 
-- Admin Panel: `http://<RASPBERRY_IP>:8081`
+- Admin Panel: `http://<RASPBERRY_IP>:8002`
 - Картинки MinIO: `http://<RASPBERRY_IP>:9000/game-images/...`
 - Grafana: `http://<RASPBERRY_IP>:3000`
 

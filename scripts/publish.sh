@@ -2,7 +2,7 @@
 set -e
 
 # Default tag if not set
-export TAG="${TAG:-4.3.1}"
+export TAG="${TAG:-4.3.2}"
 
 echo "Building images with tag: $TAG"
 docker compose build
