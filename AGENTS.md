@@ -144,12 +144,26 @@ docker compose exec postgres psql -U megagames -d megagames < discord_tools/sql/
 ## РЕЛИЗЫ
 
 ```bash
-git tag -a v4.0.0 -m "Release 4.0.0"
+TAG=4.0.0 ./scripts/release.sh
+
+# Или вручную
+git tag -a v4.0.0 -m "Release v4.0.0"
 git push origin v4.0.0
 
 # Или через GitHub CLI
 gh release create v4.0.0 --title "4.0.0" --notes "..."
 ```
+
+Предпочтительный путь релиза:
+- commit/push в GitHub
+- git tag `vX.Y.Z`
+- GitHub Actions публикует multi-arch образы в GHCR
+- Raspberry Pi и обычные серверы делают только `docker compose pull` и `docker compose up -d`
+
+Не делать по умолчанию:
+- не билдить релизные образы прямо на Pi
+- не пушить релизные образы из локальной машины, если можно использовать GHCR через GitHub Actions
+- не оставлять live-only release-изменения на хосте, если они могут быть оформлены через git + GitHub Actions
 
 ## ЗАМЕТКИ
 

@@ -70,16 +70,22 @@ Workflow `.github/workflows/publish-images.yml` собирает и пушит m
 - registry: `ghcr.io/<owner>/mega_games/<service>`
 - триггеры: `push` в `main`, `master`, `release-*`, git tags `v*`, `workflow_dispatch`
 
-Релизный сценарий:
+Предпочтительный релизный сценарий:
+
+```bash
+TAG=4.3.2 ./scripts/release.sh
+```
+
+Ручной эквивалент:
 
 ```bash
 git tag -a v4.3.2 -m "Release 4.3.2"
 git push origin v4.3.2
 ```
 
-Для релизного тега workflow публикует как минимум теги `v4.3.2` и `4.3.2`.
+Для релизного тега workflow публикует как минимум теги `v4.3.2`, `4.3.2` и `latest`.
 
-Локальная ручная публикация остаётся как запасной single-arch вариант:
+Локальная ручная публикация остаётся только как аварийный single-arch fallback:
 
 ```bash
 TAG=4.3.2 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games docker compose build
@@ -114,6 +120,10 @@ ssh pi '
 ```bash
 ssh pi "cd /home/colz/envs/mega_games && IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games TAG=4.3.2 ./scripts/deploy.sh"
 ```
+
+Здесь ничего не пушится напрямую в Raspberry Pi:
+- GitHub Actions публикует образы в GHCR.
+- Хост только делает `docker compose pull` и `docker compose up -d`.
 
 ### 3) Если нет доступа к Raspberry / вашему registry
 

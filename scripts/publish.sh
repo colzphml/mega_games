@@ -13,3 +13,4 @@ echo "Pushing images to registry..."
 docker compose push
 
 echo "Done! Images pushed to ${IMAGE_REGISTRY}/${IMAGE_NAMESPACE}/*:$TAG"
+echo "Preferred release path: TAG=$TAG ./scripts/release.sh"
