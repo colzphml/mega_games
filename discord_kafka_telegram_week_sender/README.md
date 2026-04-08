@@ -43,7 +43,13 @@ docker compose exec discord-kafka-telegram-week-sender wget -qO- http://127.0.0.
 
 ## Операционные команды (v4.3.1+)
 
-Сборка и публикация только этого сервиса:
+Предпочтительный релизный путь:
+
+```bash
+TAG=4.3.1 ./scripts/release.sh
+```
+
+Локальная сборка и публикация только этого сервиса остаётся аварийным fallback:
 
 ```bash
 TAG=4.3.1 docker compose build discord-kafka-telegram-week-sender

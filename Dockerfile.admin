@@ -1,9 +1,17 @@
 FROM --platform=$BUILDPLATFORM golang:1.25.5-alpine AS builder
 
+SHELL ["/bin/sh", "-c"]
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG TZ=Europe/Moscow
+
+ENV TZ=$TZ
+
 WORKDIR /app
 
 # Install dependencies
-RUN apk add --no-cache git
+RUN apk add --no-cache git tzdata
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./
@@ -12,8 +20,12 @@ RUN go mod download
 # Copy the rest of the source code
 COPY . .
 
-# Build the admin panel
-RUN CGO_ENABLED=0 GOOS=linux go build -o admin-panel ./cmd/admin_panel/main.go
+# Build the admin panel for the target platform selected by buildx/compose.
+RUN set -eu; \
+    GOOS="${TARGETOS:-linux}"; \
+    GOARCH="${TARGETARCH:-amd64}"; \
+    CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+    go build -o admin-panel ./cmd/admin_panel/main.go
 
 # Final stage
 FROM alpine:3.21

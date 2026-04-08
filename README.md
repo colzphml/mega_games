@@ -62,20 +62,43 @@ discord-kafka-processor ──┬──► KAFKA_WEEK_TOPIC  (JSON: season, week
 
 ## Release Workflow (v4.3.2+)
 
-### 1) Build + Push образов (Dev-машина)
+### 1) Публикация образов через GitHub Actions
+
+Workflow `.github/workflows/publish-images.yml` собирает и пушит multi-arch образы в GHCR:
+
+- платформы: `linux/amd64`, `linux/arm64`
+- registry: `ghcr.io/<owner>/mega_games/<service>`
+- триггеры: `push` в `main`, `master`, `release-*`, git tags `v*`, `workflow_dispatch`
+
+Предпочтительный релизный сценарий:
 
 ```bash
-TAG=4.3.2 docker compose build
-TAG=4.3.2 docker compose push
+TAG=4.3.2 ./scripts/release.sh
+```
+
+Ручной эквивалент:
+
+```bash
+git tag -a v4.3.2 -m "Release 4.3.2"
+git push origin v4.3.2
+```
+
+Для релизного тега workflow публикует как минимум теги `v4.3.2`, `4.3.2` и `latest`.
+
+Локальная ручная публикация остаётся только как аварийный single-arch fallback:
+
+```bash
+TAG=4.3.2 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games docker compose build
+TAG=4.3.2 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games docker compose push
 ```
 
 Быстрый вариант скриптом:
 
 ```bash
-TAG=4.3.2 ./scripts/publish.sh
+TAG=4.3.2 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games ./scripts/publish.sh
 ```
 
-### 2) Обновление на Raspberry Pi
+### 2) Обновление на Raspberry Pi / обычном сервере
 
 ```bash
 ssh pi '
@@ -83,9 +106,11 @@ ssh pi '
   cd /home/colz/envs/mega_games
   git checkout release-4.0
   git pull --ff-only origin release-4.0
+  export IMAGE_REGISTRY=ghcr.io
+  export IMAGE_NAMESPACE=colzphml/mega_games
   export TAG=4.3.2
   docker compose pull
-  docker compose up -d --force-recreate
+  docker compose up -d --force-recreate --remove-orphans --no-build
   docker compose ps
 '
 ```
@@ -93,7 +118,30 @@ ssh pi '
 Быстрый вариант скриптом:
 
 ```bash
-ssh pi 'cd /home/colz/envs/mega_games && TAG=4.3.2 ./scripts/deploy.sh'
+ssh pi "cd /home/colz/envs/mega_games && IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games TAG=4.3.2 ./scripts/deploy.sh"
+```
+
+Здесь ничего не пушится напрямую в Raspberry Pi:
+- GitHub Actions публикует образы в GHCR.
+- Хост только делает `docker compose pull` и `docker compose up -d`.
+
+Если на хосте ещё остался старый registry-конфиг, сначала привести runtime к GHCR:
+
+- в `docker-compose.yml` app-образы должны идти через `${IMAGE_REGISTRY}/${IMAGE_NAMESPACE}/...:${TAG}`
+- в `.env` должны быть `IMAGE_REGISTRY=ghcr.io` и `IMAGE_NAMESPACE=colzphml/mega_games`
+- для нормального релиза использовать `TAG=X.Y.Z`
+- временно можно использовать branch tag `release-ghcr-multiarch-actions`, если релизный тег ещё не опубликован
+
+Проверка после деплоя:
+
+```bash
+ssh pi '
+  set -euo pipefail
+  cd /home/colz/envs/mega_games
+  docker compose ps
+  docker compose exec -T discord-kafka-listener wget -qO- http://127.0.0.1:8080/health
+  docker compose exec -T admin-panel wget -qO- http://127.0.0.1:8081/health
+'
 ```
 
 ### 3) Если нет доступа к Raspberry / вашему registry
