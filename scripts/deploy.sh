@@ -1,20 +1,23 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Default tag if not set
+export IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io}"
+export IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-colzphml/mega_games}"
 export TAG="${TAG:-4.3.2}"
 
-echo "Deploying version: $TAG"
+echo "Deploying tag: $TAG"
+echo "Registry: $IMAGE_REGISTRY/$IMAGE_NAMESPACE"
 
-echo "Attempting to pull images from registry..."
-# Try to pull. If images are missing in registry, this will fail for those images.
-# We use --ignore-pull-failures to continue even if some images are missing.
-docker compose pull --ignore-pull-failures
+echo "Validating compose configuration..."
+docker compose config >/dev/null
 
-echo "Starting services..."
-# 'up' will use the pulled image if available.
-# If the image was not pulled (missing in registry) and not found locally, 
-# Docker Compose will build it using the 'build' context defined in docker-compose.yml.
-docker compose up -d --remove-orphans
+echo "Pulling images from registry..."
+docker compose pull
+
+echo "Recreating services without local builds..."
+docker compose up -d --force-recreate --remove-orphans --no-build
+
+echo "Current service state:"
+docker compose ps
 
 echo "Deployment complete."

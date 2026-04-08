@@ -110,7 +110,7 @@ ssh pi '
   export IMAGE_NAMESPACE=colzphml/mega_games
   export TAG=4.3.2
   docker compose pull
-  docker compose up -d --force-recreate
+  docker compose up -d --force-recreate --remove-orphans --no-build
   docker compose ps
 '
 ```
@@ -124,6 +124,25 @@ ssh pi "cd /home/colz/envs/mega_games && IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=
 Здесь ничего не пушится напрямую в Raspberry Pi:
 - GitHub Actions публикует образы в GHCR.
 - Хост только делает `docker compose pull` и `docker compose up -d`.
+
+Если на хосте ещё остался старый registry-конфиг, сначала привести runtime к GHCR:
+
+- в `docker-compose.yml` app-образы должны идти через `${IMAGE_REGISTRY}/${IMAGE_NAMESPACE}/...:${TAG}`
+- в `.env` должны быть `IMAGE_REGISTRY=ghcr.io` и `IMAGE_NAMESPACE=colzphml/mega_games`
+- для нормального релиза использовать `TAG=X.Y.Z`
+- временно можно использовать branch tag `release-ghcr-multiarch-actions`, если релизный тег ещё не опубликован
+
+Проверка после деплоя:
+
+```bash
+ssh pi '
+  set -euo pipefail
+  cd /home/colz/envs/mega_games
+  docker compose ps
+  docker compose exec -T discord-kafka-listener wget -qO- http://127.0.0.1:8080/health
+  docker compose exec -T admin-panel wget -qO- http://127.0.0.1:8081/health
+'
+```
 
 ### 3) Если нет доступа к Raspberry / вашему registry
 

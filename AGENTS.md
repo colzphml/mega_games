@@ -165,6 +165,51 @@ gh release create v4.0.0 --title "4.0.0" --notes "..."
 - не пушить релизные образы из локальной машины, если можно использовать GHCR через GitHub Actions
 - не оставлять live-only release-изменения на хосте, если они могут быть оформлены через git + GitHub Actions
 
+### Деплой на Pi
+
+Источник истины для runtime-образов:
+- GitHub Actions workflow `.github/workflows/publish-images.yml`
+- registry: `ghcr.io/colzphml/mega_games/<service>`
+- cleanup workflow `.github/workflows/cleanup-ghcr-ephemeral-tags.yml` удаляет старые `sha-*` теги
+
+Текущий хост и путь:
+- хост: `pi`
+- директория проекта: `/home/colz/envs/mega_games`
+
+Что должно быть на Pi:
+- `docker-compose.yml` должен ссылаться на `${IMAGE_REGISTRY}/${IMAGE_NAMESPACE}/...:${TAG}`
+- `.env` должен задавать `IMAGE_REGISTRY=ghcr.io`
+- `.env` должен задавать `IMAGE_NAMESPACE=colzphml/mega_games`
+- для штатного релиза `TAG` должен быть semver, например `4.3.2`
+- временно допустим branch tag `release-ghcr-multiarch-actions`, если релизный git tag ещё не опубликован
+
+Штатный порядок деплоя:
+
+```bash
+ssh pi '
+  set -euo pipefail
+  cd /home/colz/envs/mega_games
+  export IMAGE_REGISTRY=ghcr.io
+  export IMAGE_NAMESPACE=colzphml/mega_games
+  export TAG=4.3.2
+  docker compose pull
+  docker compose up -d --force-recreate --remove-orphans --no-build
+  docker compose ps
+'
+```
+
+Проверка после деплоя:
+- `docker compose ps` — все app-сервисы должны быть `healthy`
+- `docker compose exec discord-kafka-listener wget -qO- http://127.0.0.1:8080/health`
+- `docker compose exec admin-panel wget -qO- http://127.0.0.1:8081/health`
+- при необходимости проверить, что контейнеры реально идут из `ghcr.io/colzphml/mega_games/...`
+
+Guardrails для live-хоста:
+- перед прямыми правками на Pi делать backup как минимум `.env` и `docker-compose.yml`
+- не затирать несвязанные локальные правки на Pi без явной причины
+- не пытаться собирать образы на Pi, если задача не про аварийный обход GHCR
+- если GHCR приватный, сначала выполнить `docker login ghcr.io`
+
 ## ЗАМЕТКИ
 
 - **Нет unit-тестов**: Проект использует healthcheck'и + статусные таблицы для валидации
