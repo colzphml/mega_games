@@ -443,7 +443,7 @@ func screenshotRecapWrapper(
 		ensureStadiumBackground(),
 
 		setStage("wait stadium"),
-		waitStadiumReady(45 * time.Second),
+		waitStadiumReady(10 * time.Second),
 
 		setStage("scroll into view"),
 		chromedp.ScrollIntoView(recapWrapperSel, chromedp.ByQuery),
@@ -452,7 +452,7 @@ func screenshotRecapWrapper(
 		stripConsentOverlay(),
 		removeAppChrome(),
 		ensureStadiumBackground(),
-		waitStadiumReady(20 * time.Second),
+		waitStadiumReady(5 * time.Second),
 
 		setStage("sleep after"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
