@@ -34,7 +34,7 @@ const (
 	defaultMinioRetryDelay       = 2 * time.Second
 	defaultMinioMaxAttempts      = 30
 	defaultMinioUploadTimeout    = 30 * time.Second
-	defaultFetchTimeout          = 2 * time.Minute
+	defaultFetchTimeout          = 6 * time.Minute
 	defaultSeleniumDownloadDir   = "/home/seluser/Downloads"
 	defaultGoChromeHeadless      = true
 	defaultMinioObjectPrefix     = "game-recaps"

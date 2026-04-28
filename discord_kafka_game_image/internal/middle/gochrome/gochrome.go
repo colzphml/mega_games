@@ -32,10 +32,10 @@ import (
 )
 
 const (
-	defaultTimeout     = 140 * time.Second
-	defaultAPITimeout  = 15 * time.Second
-	defaultMetaTimeout = 15 * time.Second
-	defaultAssetsWait  = 60 * time.Second
+	defaultTimeout     = 5 * time.Minute
+	defaultAPITimeout  = 45 * time.Second
+	defaultMetaTimeout = 45 * time.Second
+	defaultAssetsWait  = 90 * time.Second
 
 	defaultViewportW  = 2600
 	defaultViewportH  = 1500
@@ -443,7 +443,7 @@ func screenshotRecapWrapper(
 		ensureStadiumBackground(),
 
 		setStage("wait stadium"),
-		waitStadiumReady(8 * time.Second),
+		waitStadiumReady(45 * time.Second),
 
 		setStage("scroll into view"),
 		chromedp.ScrollIntoView(recapWrapperSel, chromedp.ByQuery),
@@ -452,7 +452,7 @@ func screenshotRecapWrapper(
 		stripConsentOverlay(),
 		removeAppChrome(),
 		ensureStadiumBackground(),
-		waitStadiumReady(4 * time.Second),
+		waitStadiumReady(20 * time.Second),
 
 		setStage("sleep after"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
