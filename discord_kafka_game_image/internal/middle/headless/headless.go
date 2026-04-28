@@ -308,8 +308,12 @@ func loadImage(ctx context.Context, url string, timeout time.Duration) (image.Im
 
 // loadLogo выбирает адрес логотипа (пользовательский или из каталога) и загружает его
 func loadLogo(ctx context.Context, baseURL string, t Team, timeout time.Duration) (image.Image, error) {
-	if t.Logo != nil {
-		return loadImage(ctx, *t.Logo, timeout)
+	if t.Logo != nil && *t.Logo != "" {
+		logoURL := *t.Logo
+		if !strings.HasPrefix(logoURL, "http://") && !strings.HasPrefix(logoURL, "https://") {
+			logoURL = strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(logoURL, "/")
+		}
+		return loadImage(ctx, logoURL, timeout)
 	}
 	return loadImage(ctx, strings.TrimRight(baseURL, "/")+"/images/teamlogos/256/"+strconv.Itoa(t.LogoID)+".png", timeout)
 }
