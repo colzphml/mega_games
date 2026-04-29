@@ -19,6 +19,7 @@ import (
 
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
@@ -32,10 +33,10 @@ import (
 )
 
 const (
-	defaultTimeout     = 5 * time.Minute
+	defaultTimeout     = 3 * time.Minute
 	defaultAPITimeout  = 45 * time.Second
 	defaultMetaTimeout = 45 * time.Second
-	defaultAssetsWait  = 90 * time.Second
+	defaultAssetsWait  = 60 * time.Second
 
 	defaultViewportW  = 2600
 	defaultViewportH  = 1500
@@ -418,7 +419,13 @@ func screenshotRecapWrapper(
 		network.SetBlockedURLs(cmpBlockedURLPatterns()),
 
 		setStage("navigate"),
-		chromedp.Navigate(gameURL),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			// page.Navigate starts navigation without waiting for the load event.
+			// chromedp.Navigate blocks until load fires, which on slow VPN can
+			// take the entire context timeout. We only need DOM ready.
+			_, _, _, _, err := page.Navigate(gameURL).Do(ctx)
+			return err
+		}),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 
 		setStage("strip consent overlay"),
