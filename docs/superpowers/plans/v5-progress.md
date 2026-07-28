@@ -17,7 +17,7 @@
 | V5-08 Классификация ошибок Discord | ✅ | `v5/08-discord-errors` | 6c940f0 |
 | V5-09 health/ready | ✅ | `v5/09-health-split` | bd747d6 |
 | V5-10 Постсезон | ✅ | `v5/10-postseason` | fe8b83a |
-| V5-11 Экранирование Markdown | ⬜ | `v5/11-markdown-escape` | — |
+| V5-11 Экранирование Markdown | ✅ | `v5/11-markdown-escape` | 5e99b5d |
 | V5-12 Метка fallback | ✅ | `v5/12-fallback-flag` | db947b9 |
 | V5-13 Мелкие фиксы и мёртвый код | ✅ | `v5/13-cleanup` | 777b077 |
 | V5-14 ListPending в pgstore | ✅ | `v5/14-pgstore-listpending` | 2ccf46e |
