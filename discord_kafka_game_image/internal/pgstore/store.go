@@ -108,7 +108,7 @@ func (s *Store) getMessage(ctx context.Context, messageID string) (Message, erro
 }
 
 func (s *Store) TouchAttempt(ctx context.Context, messageID string, retryAfter time.Duration) error {
-	cutoff := time.Now().Add(-retryAfter)
+	cutoff := queue.StaleCutoff(time.Now(), retryAfter)
 	res, err := s.pool.Exec(
 		ctx,
 		`UPDATE game_image_status
@@ -116,7 +116,7 @@ func (s *Store) TouchAttempt(ctx context.Context, messageID string, retryAfter t
 		 WHERE message_id = $1
 		   AND (
 			status = $3
-			OR (status = $2 AND (last_attempt_at IS NULL OR last_attempt_at <= $4))
+			OR (status = $2 AND (last_attempt_at IS NULL OR last_attempt_at < $4))
 		   )`,
 		messageID,
 		statusInProgress,

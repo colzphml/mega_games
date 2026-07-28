@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+
+	"github.com/colzphml/mega_games/internal/common/queue"
 )
 
 const (
@@ -100,17 +102,27 @@ func (s *Store) getMessage(ctx context.Context, messageID string) (WeekMessage, 
 	return msg, nil
 }
 
-func (s *Store) ListPending(ctx context.Context, limit int, retryAfter time.Duration) ([]WeekMessage, error) {
+func (s *Store) ListPending(ctx context.Context, limit int, retryInterval time.Duration) ([]WeekMessage, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
 	var rows pgx.Rows
 	var err error
-	if retryAfter > 0 {
-		cutoff := time.Now().Add(-retryAfter)
-		rows, err = s.pool.Query(ctx, `SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload FROM telegram_week_status WHERE status = $1 AND (last_attempt_at IS NULL OR last_attempt_at <= $2) ORDER BY created_at ASC LIMIT $3`, statusNew, cutoff, limit)
+	if retryInterval > 0 {
+		cutoff := queue.StaleCutoff(time.Now(), retryInterval)
+		rows, err = s.pool.Query(ctx,
+			`SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload
+			 FROM telegram_week_status
+			 WHERE (status = $1 AND (last_attempt_at IS NULL OR last_attempt_at < $3))
+			    OR (status = $2 AND last_attempt_at < $3)
+			 ORDER BY created_at ASC LIMIT $4`,
+			queue.StatusNew, queue.StatusInProgress, cutoff, limit)
 	} else {
-		rows, err = s.pool.Query(ctx, `SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload FROM telegram_week_status WHERE status = $1 ORDER BY created_at ASC LIMIT $2`, statusNew, limit)
+		rows, err = s.pool.Query(ctx,
+			`SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload
+			 FROM telegram_week_status
+			 WHERE status = $1 ORDER BY created_at ASC LIMIT $2`,
+			queue.StatusNew, limit)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list pending: %w", err)
@@ -128,13 +140,30 @@ func (s *Store) ListPending(ctx context.Context, limit int, retryAfter time.Dura
 	return messages, rows.Err()
 }
 
-func (s *Store) TouchAttempt(ctx context.Context, messageID string) error {
-	res, err := s.pool.Exec(ctx, `UPDATE telegram_week_status SET last_attempt_at = NOW(), updated_at = NOW() WHERE message_id = $1`, messageID)
+// TouchAttempt claims a message for processing. It fails when another
+// worker is already sending it, which is what keeps a post from going
+// to Telegram twice.
+func (s *Store) TouchAttempt(ctx context.Context, messageID string, retryInterval time.Duration) error {
+	cutoff := queue.StaleCutoff(time.Now(), retryInterval)
+	res, err := s.pool.Exec(
+		ctx,
+		`UPDATE telegram_week_status
+		 SET status = $2, last_attempt_at = NOW(), updated_at = NOW()
+		 WHERE message_id = $1
+		   AND (
+			status = $3
+			OR (status = $2 AND last_attempt_at < $4)
+		   )`,
+		messageID,
+		queue.StatusInProgress,
+		queue.StatusNew,
+		cutoff,
+	)
 	if err != nil {
 		return fmt.Errorf("touch attempt: %w", err)
 	}
 	if res.RowsAffected() == 0 {
-		return fmt.Errorf("touch attempt: message not found")
+		return fmt.Errorf("touch attempt: message not eligible")
 	}
 	return nil
 }
@@ -176,4 +205,8 @@ func (s *Store) MoveToFailed(ctx context.Context, messageID string, details map[
 
 func StatusProcessed() string {
 	return statusProcessed
+}
+
+func StatusInProgress() string {
+	return queue.StatusInProgress
 }

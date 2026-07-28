@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+
+	"github.com/colzphml/mega_games/internal/common/queue"
 )
 
 const (
@@ -108,8 +110,8 @@ func (s *Store) ListPending(ctx context.Context, limit int, retryAfter time.Dura
 	var rows pgx.Rows
 	var err error
 	if retryAfter > 0 {
-		cutoff := time.Now().Add(-retryAfter)
-		rows, err = s.pool.Query(ctx, `SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload FROM telegram_game_status WHERE (status = $1 AND (last_attempt_at IS NULL OR last_attempt_at <= $3)) OR (status = $2 AND last_attempt_at <= $3) ORDER BY created_at ASC LIMIT $4`, statusNew, statusInProgress, cutoff, limit)
+		cutoff := queue.StaleCutoff(time.Now(), retryAfter)
+		rows, err = s.pool.Query(ctx, `SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload FROM telegram_game_status WHERE (status = $1 AND (last_attempt_at IS NULL OR last_attempt_at < $3)) OR (status = $2 AND last_attempt_at < $3) ORDER BY created_at ASC LIMIT $4`, statusNew, statusInProgress, cutoff, limit)
 	} else {
 		rows, err = s.pool.Query(ctx, `SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload FROM telegram_game_status WHERE status = $1 ORDER BY created_at ASC LIMIT $2`, statusNew, limit)
 	}
@@ -130,7 +132,7 @@ func (s *Store) ListPending(ctx context.Context, limit int, retryAfter time.Dura
 }
 
 func (s *Store) TouchAttempt(ctx context.Context, messageID string, retryAfter time.Duration) error {
-	cutoff := time.Now().Add(-retryAfter)
+	cutoff := queue.StaleCutoff(time.Now(), retryAfter)
 	res, err := s.pool.Exec(
 		ctx,
 		`UPDATE telegram_game_status
@@ -138,7 +140,7 @@ func (s *Store) TouchAttempt(ctx context.Context, messageID string, retryAfter t
 		 WHERE message_id = $1
 		   AND (
 			status = $3
-			OR (status = $2 AND (last_attempt_at IS NULL OR last_attempt_at <= $4))
+			OR (status = $2 AND (last_attempt_at IS NULL OR last_attempt_at < $4))
 		   )`,
 		messageID,
 		statusInProgress,

@@ -113,6 +113,10 @@ func (p *Processor) consumeLoop(ctx context.Context) error {
 			p.log.Info().Str("message_id", messageID).Msg("week message already processed")
 			continue
 		}
+		if stored.Status == store.StatusInProgress() {
+			p.log.Info().Str("message_id", messageID).Msg("week message already in progress")
+			continue
+		}
 		if stored.Attempts >= p.cfg.MaxAttempts {
 			if err := p.store.MoveToFailed(ctx, messageID, kafkaDetails(msg, "max attempts on consume")); err != nil {
 				p.log.Error().Err(err).Str("message_id", messageID).Msg("failed to move week message to failed table")
@@ -125,8 +129,11 @@ func (p *Processor) consumeLoop(ctx context.Context) error {
 }
 
 func (p *Processor) processMessage(ctx context.Context, msg store.WeekMessage, details map[string]any) {
-	if err := p.store.TouchAttempt(ctx, msg.ID); err != nil {
-		p.log.Warn().Err(err).Str("message_id", msg.ID).Msg("failed to mark attempt start")
+	// A failed claim means another worker holds this message. Skipping is
+	// the point: it is what stops a duplicate post.
+	if err := p.store.TouchAttempt(ctx, msg.ID, p.cfg.ProcessRetryInterval); err != nil {
+		p.log.Info().Err(err).Str("message_id", msg.ID).Msg("week message not eligible for processing")
+		return
 	}
 	if err := p.handleMessage(ctx, msg); err != nil {
 		updated, updateErr := p.store.RecordAttempt(ctx, msg.ID, err.Error())
