@@ -18,12 +18,10 @@ import (
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/middle"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/pgstore"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/storage"
-	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/store"
 )
 
 type Processor struct {
 	cfg     config.Config
-	store   *store.Store
 	pg      *pgstore.Store
 	reader  *kafkago.Reader
 	writer  *kafka.Producer
@@ -46,10 +44,9 @@ type GameImageEvent struct {
 	Fetcher         string    `json:"fetcher"`
 }
 
-func New(cfg config.Config, storeClient *store.Store, pgStore *pgstore.Store, reader *kafkago.Reader, writer *kafka.Producer, fetcher middle.Fetcher, objects *storage.Client, log zerolog.Logger) *Processor {
+func New(cfg config.Config, pgStore *pgstore.Store, reader *kafkago.Reader, writer *kafka.Producer, fetcher middle.Fetcher, objects *storage.Client, log zerolog.Logger) *Processor {
 	return &Processor{
 		cfg:     cfg,
-		store:   storeClient,
 		pg:      pgStore,
 		reader:  reader,
 		writer:  writer,
@@ -87,7 +84,7 @@ func (p *Processor) retryLoop(ctx context.Context) {
 }
 
 func (p *Processor) reprocessPending(ctx context.Context, retryAfter time.Duration, source string) error {
-	pending, err := p.store.ListPending(ctx, 1000, retryAfter)
+	pending, err := p.pg.ListPending(ctx, 1000, retryAfter)
 	if err != nil {
 		return err
 	}
@@ -97,12 +94,7 @@ func (p *Processor) reprocessPending(ctx context.Context, retryAfter time.Durati
 
 	p.log.Info().Int("count", len(pending)).Msg("reprocessing pending game images")
 	for _, msg := range pending {
-		pgMsg, err := p.ensurePostgres(ctx, msg.ID, msg.Payload)
-		if err != nil {
-			p.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to sync postgres status")
-			continue
-		}
-		if maxInt(msg.Attempts, pgMsg.Attempts) >= p.cfg.MaxAttempts {
+		if msg.Attempts >= p.cfg.MaxAttempts {
 			if err := p.moveToFailed(ctx, msg.ID, map[string]any{"reason": "max attempts", "source": source}); err != nil {
 				p.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to move game message to failed storage")
 			}
@@ -148,36 +140,30 @@ func (p *Processor) consumeLoop(ctx context.Context) error {
 			continue
 		}
 
-		stored, err := p.store.EnsureGameMessage(ctx, messageID, payload)
-		if err != nil {
-			p.log.Error().Err(err).Str("message_id", messageID).Msg("failed to persist game message")
-			continue
-		}
-
 		if err := p.reader.CommitMessages(ctx, msg); err != nil {
 			p.log.Error().Err(err).Str("message_id", messageID).Msg("failed to commit kafka message")
 		}
 
-		if stored.Status == store.StatusProcessed() || pgMsg.Status == pgstore.StatusProcessed() {
+		if pgMsg.Status == pgstore.StatusProcessed() {
 			p.log.Info().Str("message_id", messageID).Msg("game message already processed")
 			continue
 		}
-		if stored.Status == store.StatusInProgress() || pgMsg.Status == pgstore.StatusInProgress() {
+		if pgMsg.Status == pgstore.StatusInProgress() {
 			p.log.Info().Str("message_id", messageID).Msg("game message already in progress")
 			continue
 		}
-		if maxInt(stored.Attempts, pgMsg.Attempts) >= p.cfg.MaxAttempts {
+		if pgMsg.Attempts >= p.cfg.MaxAttempts {
 			if err := p.moveToFailed(ctx, messageID, kafkaDetails(msg, "max attempts on consume")); err != nil {
 				p.log.Error().Err(err).Str("message_id", messageID).Msg("failed to move game message to failed storage")
 			}
 			continue
 		}
 
-		p.processMessage(ctx, stored, kafkaDetails(msg, "consume"))
+		p.processMessage(ctx, pgMsg, kafkaDetails(msg, "consume"))
 	}
 }
 
-func (p *Processor) processMessage(ctx context.Context, msg store.GameMessage, details map[string]any) {
+func (p *Processor) processMessage(ctx context.Context, msg pgstore.Message, details map[string]any) {
 	if err := p.touchAttempt(ctx, msg.ID); err != nil {
 		p.log.Info().Err(err).Str("message_id", msg.ID).Msg("game message not eligible for processing")
 		return
@@ -198,13 +184,27 @@ func (p *Processor) processMessage(ctx context.Context, msg store.GameMessage, d
 	}
 }
 
-func (p *Processor) handleMessage(ctx context.Context, msg store.GameMessage) error {
-	payload := msg.Payload
+func (p *Processor) handleMessage(ctx context.Context, msg pgstore.Message) error {
+	var payload pgstore.GamePayload
+	if len(msg.Payload) > 0 {
+		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+			return fmt.Errorf("unmarshal game payload: %w", err)
+		}
+	}
 	if payload.GameID == "" || payload.GameURL == "" {
 		return fmt.Errorf("missing game payload")
 	}
 
-	meta := msg.Image
+	// msg.Image is a JSONB column: NULL comes back as an empty/nil byte
+	// slice, and an explicit JSON null unmarshals into a nil pointer too.
+	// Either case means "no image yet, must fetch" — anything else means
+	// there is already a stored image to reuse instead of regenerating it.
+	var meta *pgstore.ImageMeta
+	if len(msg.Image) > 0 {
+		if err := json.Unmarshal(msg.Image, &meta); err != nil {
+			return fmt.Errorf("unmarshal image meta: %w", err)
+		}
+	}
 	if meta == nil {
 		fetchCtx, cancel := context.WithTimeout(ctx, p.cfg.FetchTimeout)
 		result, err := p.fetcher.Fetch(fetchCtx, payload.GameID)
@@ -231,7 +231,7 @@ func (p *Processor) handleMessage(ctx context.Context, msg store.GameMessage) er
 			fetcherName += "-fallback"
 		}
 
-		meta = &store.ImageMeta{
+		meta = &pgstore.ImageMeta{
 			ImageURL:    upload.URL,
 			Bucket:      upload.Bucket,
 			ObjectKey:   upload.ObjectKey,
@@ -278,24 +278,24 @@ func (p *Processor) handleMessage(ctx context.Context, msg store.GameMessage) er
 	return nil
 }
 
-func parseGamePayload(value, baseURL, league string) (store.GamePayload, error) {
+func parseGamePayload(value, baseURL, league string) (pgstore.GamePayload, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return store.GamePayload{}, fmt.Errorf("empty payload")
+		return pgstore.GamePayload{}, fmt.Errorf("empty payload")
 	}
 	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
 		u, err := url.Parse(trimmed)
 		if err != nil {
-			return store.GamePayload{}, fmt.Errorf("invalid url payload: %w", err)
+			return pgstore.GamePayload{}, fmt.Errorf("invalid url payload: %w", err)
 		}
 		gameID, parsedLeague := parseGameFromPath(u.Path)
 		if gameID == "" {
-			return store.GamePayload{}, fmt.Errorf("cannot parse game id from url")
+			return pgstore.GamePayload{}, fmt.Errorf("cannot parse game id from url")
 		}
 		if parsedLeague != "" {
 			league = parsedLeague
 		}
-		return store.GamePayload{
+		return pgstore.GamePayload{
 			GameID:  gameID,
 			GameURL: trimmed,
 		}, nil
@@ -303,11 +303,11 @@ func parseGamePayload(value, baseURL, league string) (store.GamePayload, error) 
 
 	baseURL = strings.TrimRight(baseURL, "/")
 	if baseURL == "" || league == "" {
-		return store.GamePayload{}, fmt.Errorf("missing base url or league")
+		return pgstore.GamePayload{}, fmt.Errorf("missing base url or league")
 	}
 	gameID := trimmed
 	gameURL := fmt.Sprintf("%s/leagues/%s/games/%s", baseURL, league, gameID)
-	return store.GamePayload{GameID: gameID, GameURL: gameURL}, nil
+	return pgstore.GamePayload{GameID: gameID, GameURL: gameURL}, nil
 }
 
 func parseGameFromPath(p string) (gameID, league string) {
@@ -360,7 +360,7 @@ func kafkaDetails(msg kafkago.Message, reason string) map[string]any {
 	}
 }
 
-func (p *Processor) ensurePostgres(ctx context.Context, messageID string, payload store.GamePayload) (pgstore.Message, error) {
+func (p *Processor) ensurePostgres(ctx context.Context, messageID string, payload pgstore.GamePayload) (pgstore.Message, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return pgstore.Message{}, fmt.Errorf("marshal payload: %w", err)
@@ -369,47 +369,25 @@ func (p *Processor) ensurePostgres(ctx context.Context, messageID string, payloa
 }
 
 func (p *Processor) touchAttempt(ctx context.Context, messageID string) error {
-	if err := p.pg.TouchAttempt(ctx, messageID, p.cfg.ProcessRetryInterval); err != nil {
-		return err
-	}
-	return p.store.TouchAttempt(ctx, messageID, p.cfg.ProcessRetryInterval)
+	return p.pg.TouchAttempt(ctx, messageID, p.cfg.ProcessRetryInterval)
 }
 
-func (p *Processor) recordAttempt(ctx context.Context, messageID string, errMsg string) (store.GameMessage, error) {
-	if _, err := p.pg.RecordAttempt(ctx, messageID, errMsg); err != nil {
-		return store.GameMessage{}, err
-	}
-	return p.store.RecordAttempt(ctx, messageID, errMsg)
+func (p *Processor) recordAttempt(ctx context.Context, messageID, errMsg string) (pgstore.Message, error) {
+	return p.pg.RecordAttempt(ctx, messageID, errMsg)
 }
 
 func (p *Processor) markProcessed(ctx context.Context, messageID string) error {
-	if err := p.pg.MarkProcessed(ctx, messageID); err != nil {
-		return err
-	}
-	return p.store.MarkProcessed(ctx, messageID)
+	return p.pg.MarkProcessed(ctx, messageID)
 }
 
 func (p *Processor) moveToFailed(ctx context.Context, messageID string, details map[string]any) error {
-	if err := p.pg.MoveToFailed(ctx, messageID, details); err != nil {
-		return err
-	}
-	return p.store.MoveToFailed(ctx, messageID, details)
+	return p.pg.MoveToFailed(ctx, messageID, details)
 }
 
-func (p *Processor) updateMetadata(ctx context.Context, messageID string, meta store.ImageMeta) error {
-	if err := p.store.UpdateMetadata(ctx, messageID, meta); err != nil {
-		return err
-	}
+func (p *Processor) updateMetadata(ctx context.Context, messageID string, meta pgstore.ImageMeta) error {
 	imageJSON, err := json.Marshal(meta)
 	if err != nil {
 		return fmt.Errorf("marshal image meta: %w", err)
 	}
 	return p.pg.UpdateImage(ctx, messageID, imageJSON)
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

@@ -145,28 +145,6 @@ services:
     networks:
       - megagames-net
 
-  mongo:
-    image: ${MONGO_IMAGE:-mongo:7}
-    restart: unless-stopped
-    environment:
-      TZ: ${TZ}
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
-    ports:
-      - "${MONGO_EXPOSE_PORT:-27017}:27017"
-    healthcheck:
-      test: ["CMD", "bash", "-c", "if command -v mongosh >/dev/null 2>&1; then mongosh --quiet --eval 'db.runCommand({ ping: 1 })'; else mongo --quiet --eval 'db.runCommand({ ping: 1 })'; fi"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
-    labels:
-      - autoheal=true
-    volumes:
-      - mongo-data:/data/db
-    networks:
-      - megagames-net
-
   minio:
     image: minio/minio:latest
     restart: unless-stopped
@@ -258,8 +236,6 @@ services:
       kafka-init:
         condition: service_completed_successfully
       postgres:
-        condition: service_healthy
-      mongo:
         condition: service_healthy
       minio:
         condition: service_started

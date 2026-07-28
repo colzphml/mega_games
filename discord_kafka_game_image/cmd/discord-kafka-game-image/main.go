@@ -19,7 +19,6 @@ import (
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/pgstore"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/processor"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/storage"
-	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/store"
 )
 
 var (
@@ -53,22 +52,6 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	storeClient, err := store.New(ctx, cfg, log)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to connect to mongo")
-	}
-	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := storeClient.Close(closeCtx); err != nil {
-			log.Error().Err(err).Msg("failed to close mongo client")
-		}
-	}()
-
-	if err := waitForMongo(ctx, storeClient, cfg, log); err != nil {
-		log.Fatal().Err(err).Msg("mongo not ready")
-	}
 
 	pgStore, err := pgstore.New(ctx, cfg.PostgresDSN(), log)
 	if err != nil {
@@ -115,29 +98,25 @@ func main() {
 		}
 	}()
 
-	healthServer := startHealthServer(ctx, cfg.HealthAddr, storeClient, pgStore, objectStore, cfg.KafkaBrokers, log)
+	healthServer := startHealthServer(ctx, cfg.HealthAddr, pgStore, objectStore, cfg.KafkaBrokers, log)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = healthServer.Shutdown(shutdownCtx)
 	}()
 
-	proc := processor.New(cfg, storeClient, pgStore, reader, producer, fetcher, objectStore, log)
+	proc := processor.New(cfg, pgStore, reader, producer, fetcher, objectStore, log)
 	log.Info().Str("topic", cfg.KafkaGameTopic).Str("group", cfg.KafkaConsumerGroup).Msg("game image consumer started")
 	if err := proc.Run(ctx); err != nil {
 		log.Fatal().Err(err).Msg("processor stopped with error")
 	}
 }
 
-func startHealthServer(ctx context.Context, addr string, storeClient *store.Store, pgStore *pgstore.Store, objectStore *storage.Client, brokers []string, log zerolog.Logger) *http.Server {
+func startHealthServer(ctx context.Context, addr string, pgStore *pgstore.Store, objectStore *storage.Client, brokers []string, log zerolog.Logger) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		pingCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
-		if err := storeClient.Ping(pingCtx); err != nil {
-			http.Error(w, "mongo not healthy", http.StatusServiceUnavailable)
-			return
-		}
 		if err := pgStore.Ping(pingCtx); err != nil {
 			http.Error(w, "postgres not healthy", http.StatusServiceUnavailable)
 			return
@@ -190,25 +169,6 @@ func kafkaPing(ctx context.Context, brokers []string) error {
 		return err
 	}
 	return conn.Close()
-}
-
-func waitForMongo(ctx context.Context, storeClient *store.Store, cfg config.Config, log zerolog.Logger) error {
-	for attempt := 1; attempt <= cfg.MongoMaxAttempts; attempt++ {
-		pingCtx, cancel := context.WithTimeout(ctx, cfg.MongoConnectTimeout)
-		err := storeClient.Ping(pingCtx)
-		cancel()
-		if err == nil {
-			return nil
-		}
-		if attempt == cfg.MongoMaxAttempts {
-			return err
-		}
-		log.Warn().Err(err).Int("attempt", attempt).Int("max_attempts", cfg.MongoMaxAttempts).Msg("mongo not ready, retrying")
-		if !sleepWithContext(ctx, cfg.MongoRetryDelay) {
-			return ctx.Err()
-		}
-	}
-	return nil
 }
 
 func waitForPostgres(ctx context.Context, pgStore *pgstore.Store, cfg config.Config, log zerolog.Logger) error {

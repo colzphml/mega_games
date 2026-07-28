@@ -9,36 +9,31 @@ import (
 )
 
 const (
-	defaultKafkaClientID         = "discord-kafka-game-image"
-	defaultKafkaConsumerGroup    = "discord-kafka-game-image"
-	defaultKafkaWriteTimeout     = 5 * time.Second
-	defaultKafkaReadTimeout      = 10 * time.Second
-	defaultHealthAddr            = ":8080"
-	defaultTimezone              = "Europe/Moscow"
-	defaultPostgresPort          = 5432
-	defaultPostgresSSLMode       = "disable"
-	defaultPostgresTimeout       = 5 * time.Second
-	defaultPostgresRetryDelay    = 2 * time.Second
-	defaultPostgresMaxAttempts   = 30
-	defaultMongoConnectTimeout   = 5 * time.Second
-	defaultMongoRetryDelay       = 2 * time.Second
-	defaultMongoMaxAttempts      = 30
-	defaultMaxAttempts           = 10
-	defaultRetryInterval         = 1 * time.Minute
-	defaultFetcherType           = "headless"
-	defaultLeague                = "MEGA"
-	defaultBaseURL               = "https://neonsportz.com"
-	defaultMinioRegion           = "us-east-1"
-	defaultMinioUseSSL           = false
-	defaultMinioConnectTimeout   = 5 * time.Second
-	defaultMinioRetryDelay       = 2 * time.Second
-	defaultMinioMaxAttempts      = 30
-	defaultMinioUploadTimeout    = 30 * time.Second
-	defaultFetchTimeout          = 6 * time.Minute
-	defaultGoChromeHeadless      = true
-	defaultMinioObjectPrefix     = "game-recaps"
-	defaultMongoCollection       = "game_images"
-	defaultMongoFailedCollection = "game_images_failed"
+	defaultKafkaClientID       = "discord-kafka-game-image"
+	defaultKafkaConsumerGroup  = "discord-kafka-game-image"
+	defaultKafkaWriteTimeout   = 5 * time.Second
+	defaultKafkaReadTimeout    = 10 * time.Second
+	defaultHealthAddr          = ":8080"
+	defaultTimezone            = "Europe/Moscow"
+	defaultPostgresPort        = 5432
+	defaultPostgresSSLMode     = "disable"
+	defaultPostgresTimeout     = 5 * time.Second
+	defaultPostgresRetryDelay  = 2 * time.Second
+	defaultPostgresMaxAttempts = 30
+	defaultMaxAttempts         = 10
+	defaultRetryInterval       = 1 * time.Minute
+	defaultFetcherType         = "headless"
+	defaultLeague              = "MEGA"
+	defaultBaseURL             = "https://neonsportz.com"
+	defaultMinioRegion         = "us-east-1"
+	defaultMinioUseSSL         = false
+	defaultMinioConnectTimeout = 5 * time.Second
+	defaultMinioRetryDelay     = 2 * time.Second
+	defaultMinioMaxAttempts    = 30
+	defaultMinioUploadTimeout  = 30 * time.Second
+	defaultFetchTimeout        = 6 * time.Minute
+	defaultGoChromeHeadless    = true
+	defaultMinioObjectPrefix   = "game-recaps"
 )
 
 type Config struct {
@@ -60,14 +55,6 @@ type Config struct {
 	PostgresRetryDelay  time.Duration
 	PostgresMaxAttempts int
 
-	MongoURI              string
-	MongoDB               string
-	MongoCollection       string
-	MongoFailedCollection string
-	MongoConnectTimeout   time.Duration
-	MongoRetryDelay       time.Duration
-	MongoMaxAttempts      int
-
 	MinioEndpoint       string
 	MinioAccessKey      string
 	MinioSecretKey      string
@@ -81,11 +68,11 @@ type Config struct {
 	MinioObjectPrefix   string
 	MinioUploadTimeout  time.Duration
 
-	FetcherType         string
-	BaseURL             string
-	League              string
-	FetchTimeout        time.Duration
-	GoChromeHeadless    bool
+	FetcherType      string
+	BaseURL          string
+	League           string
+	FetchTimeout     time.Duration
+	GoChromeHeadless bool
 
 	HealthAddr           string
 	Timezone             string
@@ -143,24 +130,6 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.PostgresMaxAttempts, err = intEnv("POSTGRES_CONNECT_MAX_ATTEMPTS", defaultPostgresMaxAttempts); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.MongoURI, err = requiredEnv("MONGO_URI"); err != nil {
-		return Config{}, err
-	}
-	if cfg.MongoDB, err = requiredEnv("MONGO_DB"); err != nil {
-		return Config{}, err
-	}
-	cfg.MongoCollection = optionalEnv("MONGO_COLLECTION", defaultMongoCollection)
-	cfg.MongoFailedCollection = optionalEnv("MONGO_FAILED_COLLECTION", defaultMongoFailedCollection)
-	if cfg.MongoConnectTimeout, err = durationEnv("MONGO_CONNECT_TIMEOUT", defaultMongoConnectTimeout); err != nil {
-		return Config{}, err
-	}
-	if cfg.MongoRetryDelay, err = durationEnv("MONGO_CONNECT_RETRY_DELAY", defaultMongoRetryDelay); err != nil {
-		return Config{}, err
-	}
-	if cfg.MongoMaxAttempts, err = intEnv("MONGO_CONNECT_MAX_ATTEMPTS", defaultMongoMaxAttempts); err != nil {
 		return Config{}, err
 	}
 
