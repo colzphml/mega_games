@@ -13,25 +13,20 @@ ENV TZ=$TZ
 
 WORKDIR /src
 
-RUN apk add --no-cache git tzdata
+RUN apk add --no-cache tzdata
 
-COPY .git ./.git
-
-WORKDIR /src/discord_kafka_telegram_game_sender
-COPY discord_kafka_telegram_game_sender/go.mod discord_kafka_telegram_game_sender/go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
 
-COPY discord_kafka_telegram_game_sender/ ./
+COPY . .
+
 RUN set -eu; \
-    VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo unknown)}"; \
-    COMMIT="${COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"; \
-    BUILD_DATE="${BUILD_DATE:-$(date +%Y-%m-%dT%H:%M:%S%z)}"; \
     GOOS="${TARGETOS:-linux}"; \
     GOARCH="${TARGETARCH:-amd64}"; \
     CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
     go build -o /out/discord-kafka-telegram-game-sender \
-    -ldflags "-s -w -X main.buildVersion=${VERSION} -X main.buildCommit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
-    ./cmd/discord-kafka-telegram-game-sender
+    -ldflags "-s -w -X main.buildVersion=${VERSION:-dev} -X main.buildCommit=${COMMIT:-unknown} -X main.buildDate=${BUILD_DATE:-unknown}" \
+    ./discord_kafka_telegram_game_sender/cmd/discord-kafka-telegram-game-sender
 
 FROM alpine:3.21
 

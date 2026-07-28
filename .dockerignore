@@ -1,0 +1,15 @@
+.git
+.github
+docs
+monitoring
+screens
+*.md
+!README.md
+MEGA_games.csv
+MEGA_teams.csv
+main
+admin_panel
+.env
+.env.*
+*.bak-*
+discord_tools
