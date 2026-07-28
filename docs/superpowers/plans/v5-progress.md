@@ -9,7 +9,7 @@
 |---|---|---|---|
 | V5-01 Единый Go-модуль | ✅ | `v5/01-single-module` | 8939a9c |
 | V5-02 common/config | ✅ | `v5/02-common-config` | c537319 |
-| V5-03 common/retry | ⬜ | `v5/03-common-retry` | — |
+| V5-03 common/retry | ✅ | `v5/03-common-retry` | c1db5aa |
 | V5-04 common/health | ⬜ | `v5/04-common-health` | — |
 | V5-05 common/queue | ⬜ | `v5/05-common-queue` | — |
 | V5-06 Харнесс pgtest | ⬜ | `v5/06-pgtest` | — |
