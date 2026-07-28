@@ -18,7 +18,7 @@
 | V5-09 health/ready | ⬜ | `v5/09-health-split` | — |
 | V5-10 Постсезон | ⬜ | `v5/10-postseason` | — |
 | V5-11 Экранирование Markdown | ⬜ | `v5/11-markdown-escape` | — |
-| V5-12 Метка fallback | ⬜ | `v5/12-fallback-flag` | — |
+| V5-12 Метка fallback | ✅ | `v5/12-fallback-flag` | db947b9 |
 | V5-13 Мелкие фиксы и мёртвый код | ⬜ | `v5/13-cleanup` | — |
 | V5-14 ListPending в pgstore | ⬜ | `v5/14-pgstore-listpending` | — |
 | V5-15 Удаление MongoDB | ⬜ | `v5/15-drop-mongo` | — |
