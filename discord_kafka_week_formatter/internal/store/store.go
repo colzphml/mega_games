@@ -249,11 +249,23 @@ func (s *Store) LoadTeams(ctx context.Context) (map[string]Team, error) {
 	return teams, rows.Err()
 }
 
+// LoadGamesForWeek returns the scheduled games for a week.
+//
+// The season is taken as MAX(season_index) rather than from the payload
+// because a Discord message carries only the season *type*
+// ("regular"/"preseason"/"postseason"), never a season number. The
+// schedule is loaded once per season, so the newest one in the table is
+// the current one — and the pipeline does not depend on having seen the
+// season-change message.
+//
+// Postseason returns nothing: no playoff schedule is ever exported, and
+// the formatter prints an explanation instead of an empty list.
 func (s *Store) LoadGamesForWeek(ctx context.Context, season string, week int) ([]Game, error) {
-	if week < 1 {
+	if week < 1 || season == "postseason" {
 		return nil, nil
 	}
 	if season == "preseason" && week == 4 {
+		// Preseason week 4 has no scheduled games in this league.
 		return nil, nil
 	}
 
@@ -265,11 +277,15 @@ func (s *Store) LoadGamesForWeek(ctx context.Context, season string, week int) (
 	if seasonIndex < 0 {
 		return nil, nil
 	}
+	s.log.Debug().Int("season_index", seasonIndex).Str("season", season).Int("week", week).
+		Msg("loading schedule")
 
-	stage := season == "regular"
-	weekIndex := week - 1
-
-	rows, err := s.pool.Query(ctx, `SELECT home_team, away_team FROM schedule_games WHERE season_index = $1 AND stage = $2 AND week_index = $3`, seasonIndex, stage, weekIndex)
+	// stage is fixed to true because the NeonSportz export's stageIndex is
+	// always 1 — there is no other value to distinguish on.
+	rows, err := s.pool.Query(ctx,
+		`SELECT home_team, away_team FROM schedule_games
+		 WHERE season_index = $1 AND stage = $2 AND week_index = $3`,
+		seasonIndex, true, week-1)
 	if err != nil {
 		return nil, fmt.Errorf("load games: %w", err)
 	}
