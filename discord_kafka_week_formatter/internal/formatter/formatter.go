@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/colzphml/mega_games/discord_kafka_week_formatter/internal/store"
+	"github.com/colzphml/mega_games/internal/common/tgmarkdown"
 )
 
 // announceDeadline is how long players have to announce their match after
@@ -59,17 +60,19 @@ func BuildWeekMessage(payload store.WeekPayload, teams map[string]store.Team, ga
 // Telegram mentions for human players. The exact text goes out to people in
 // Telegram, so the format must not change.
 func formatGameLine(away, home store.Team) string {
+	awayName := tgmarkdown.Escape(away.ShortName)
+	homeName := tgmarkdown.Escape(home.ShortName)
 	awayCPU := isCPU(away.Player)
 	homeCPU := isCPU(home.Player)
 	switch {
 	case awayCPU && homeCPU:
-		return fmt.Sprintf("\n%s(CPU) @ %s(CPU)", away.ShortName, home.ShortName)
+		return fmt.Sprintf("\n%s(CPU) @ %s(CPU)", awayName, homeName)
 	case awayCPU:
-		return fmt.Sprintf("\n%s(CPU) @ [%s](%s)", away.ShortName, home.ShortName, telegramLink(home.Player))
+		return fmt.Sprintf("\n%s(CPU) @ [%s](%s)", awayName, homeName, telegramLink(home.Player))
 	case homeCPU:
-		return fmt.Sprintf("\n[%s](%s) @ %s(CPU)", away.ShortName, telegramLink(away.Player), home.ShortName)
+		return fmt.Sprintf("\n[%s](%s) @ %s(CPU)", awayName, telegramLink(away.Player), homeName)
 	default:
-		return fmt.Sprintf("\n[%s](%s) @ [%s](%s)", away.ShortName, telegramLink(away.Player), home.ShortName, telegramLink(home.Player))
+		return fmt.Sprintf("\n[%s](%s) @ [%s](%s)", awayName, telegramLink(away.Player), homeName, telegramLink(home.Player))
 	}
 }
 

@@ -64,3 +64,24 @@ func TestPreseasonWeekFourHasNoGames(t *testing.T) {
 		t.Errorf("got:\n%s", got)
 	}
 }
+
+func TestGameLineEscapesNickname(t *testing.T) {
+	teams := map[string]store.Team{
+		"A": {Name: "A", ShortName: "A_TEAM", Player: "some_user"},
+		"B": {Name: "B", ShortName: "B", Player: "CPU"},
+	}
+	got, err := BuildWeekMessage(
+		store.WeekPayload{Season: "regular", Week: 1},
+		teams,
+		[]store.Game{{Home: "A", Away: "B"}},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `A\_TEAM`) {
+		t.Errorf("team name must be escaped, got:\n%s", got)
+	}
+	if !strings.Contains(got, "t.me/some_user") {
+		t.Errorf("URL must stay raw, got:\n%s", got)
+	}
+}
