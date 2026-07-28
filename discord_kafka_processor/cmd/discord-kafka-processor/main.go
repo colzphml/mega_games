@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"net/http"
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +16,7 @@ import (
 	"github.com/colzphml/mega_games/discord_kafka_processor/internal/kafka"
 	"github.com/colzphml/mega_games/discord_kafka_processor/internal/processor"
 	"github.com/colzphml/mega_games/discord_kafka_processor/internal/store"
+	"github.com/colzphml/mega_games/internal/common/health"
 )
 
 var (
@@ -56,7 +57,7 @@ func main() {
 	}
 	defer storeClient.Close()
 
-	if err := waitForPostgres(ctx, storeClient, cfg, log); err != nil {
+	if err := health.WaitFor(ctx, "postgres", cfg.PostgresMaxAttempts, cfg.PostgresRetryDelay, log, storeClient.Ping); err != nil {
 		log.Fatal().Err(err).Msg("postgres not ready")
 	}
 	if err := storeClient.EnsureSchema(ctx); err != nil {
@@ -89,91 +90,26 @@ func main() {
 	})
 	defer reader.Close()
 
-	healthServer := startHealthServer(ctx, cfg.HealthAddr, discordClient, storeClient, log)
+	healthSrv := health.NewServer(cfg.HealthAddr, log)
+	healthSrv.AddLiveness("postgres", storeClient.Ping)
+	// Discord is a readiness concern only: restarting this container
+	// cannot fix an outage on Discord's side, and autoheal watches
+	// /health, so listing it there caused restart loops.
+	healthSrv.AddReadiness("discord", func(ctx context.Context) error {
+		if !discordClient.Healthy() {
+			return errors.New("discord api unreachable")
+		}
+		return nil
+	})
+	healthSrv.Start(ctx)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = healthServer.Shutdown(shutdownCtx)
+		_ = healthSrv.Shutdown(shutdownCtx)
 	}()
 
 	proc := processor.New(cfg, storeClient, discordClient, producer, reader, log)
 	if err := proc.Run(ctx); err != nil {
 		log.Fatal().Err(err).Msg("processor stopped with error")
-	}
-}
-
-func startHealthServer(ctx context.Context, addr string, discordClient *discord.Client, storeClient *store.Store, log zerolog.Logger) *http.Server {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		if !discordClient.Healthy() {
-			http.Error(w, "discord not healthy", http.StatusServiceUnavailable)
-			return
-		}
-		pingCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
-		if err := storeClient.Ping(pingCtx); err != nil {
-			http.Error(w, "postgres not healthy", http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	log.Info().Str("addr", addr).Msg("health server listening")
-
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Error().Err(err).Msg("health server stopped")
-		}
-	}()
-
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.Error().Err(err).Msg("health server shutdown error")
-		}
-	}()
-
-	return srv
-}
-
-func waitForPostgres(ctx context.Context, storeClient *store.Store, cfg config.Config, log zerolog.Logger) error {
-	for attempt := 1; attempt <= cfg.PostgresMaxAttempts; attempt++ {
-		pingCtx, cancel := context.WithTimeout(ctx, cfg.PostgresTimeout)
-		err := storeClient.Ping(pingCtx)
-		cancel()
-		if err == nil {
-			return nil
-		}
-		if attempt == cfg.PostgresMaxAttempts {
-			return err
-		}
-		log.Warn().Err(err).Int("attempt", attempt).Int("max_attempts", cfg.PostgresMaxAttempts).Msg("postgres not ready, retrying")
-		if !sleepWithContext(ctx, cfg.PostgresRetryDelay) {
-			return ctx.Err()
-		}
-	}
-	return nil
-}
-
-func sleepWithContext(ctx context.Context, delay time.Duration) bool {
-	if delay <= 0 {
-		return true
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
 	}
 }

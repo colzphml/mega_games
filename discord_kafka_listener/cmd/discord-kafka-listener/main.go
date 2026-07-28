@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"net/http"
+	"errors"
 	"os"
 	"os/signal"
 	"sync"
@@ -13,6 +13,7 @@ import (
 	"github.com/colzphml/mega_games/discord_kafka_listener/internal/discord"
 	"github.com/colzphml/mega_games/discord_kafka_listener/internal/kafka"
 	"github.com/colzphml/mega_games/discord_kafka_listener/internal/state"
+	"github.com/colzphml/mega_games/internal/common/health"
 	"github.com/rs/zerolog"
 )
 
@@ -76,23 +77,22 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to start discord client")
 	}
 
-	healthMux := http.NewServeMux()
-	healthMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Liveness is intentionally empty: this service is alive as long as
+	// the HTTP server answers. Readiness to actually do work depends on
+	// the Discord session, which belongs on /ready only.
+	healthSrv := health.NewServer(cfg.HealthAddr, log)
+	healthSrv.AddReadiness("discord", func(ctx context.Context) error {
 		if !discordClient.Ready() {
-			http.Error(w, "discord not ready", http.StatusServiceUnavailable)
-			return
+			return errors.New("discord session not ready")
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		return nil
 	})
-
-	healthServer := &http.Server{
-		Addr:              cfg.HealthAddr,
-		Handler:           healthMux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	log.Info().Str("addr", cfg.HealthAddr).Msg("health server listening")
+	healthSrv.Start(ctx)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = healthSrv.Shutdown(shutdownCtx)
+	}()
 
 	var backfillMu sync.Mutex
 	backfillInProgress := false
@@ -149,21 +149,6 @@ func main() {
 					triggerBackfill(ev.Type)
 				}
 			}
-		}
-	}()
-
-	go func() {
-		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Error().Err(err).Msg("health server stopped")
-		}
-	}()
-
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := healthServer.Shutdown(shutdownCtx); err != nil {
-			log.Error().Err(err).Msg("health server shutdown error")
 		}
 	}()
 
