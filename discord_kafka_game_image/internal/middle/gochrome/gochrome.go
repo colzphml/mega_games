@@ -20,6 +20,7 @@ import (
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
@@ -45,6 +46,20 @@ const (
 	defaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
 )
 
+// Recap card selectors. NeonSportz shipped a redesign on 2026-07-26 that turned
+// the recap card's id attributes into CSS classes, which silently broke every
+// screenshot. Match both spellings so either version of the markup works.
+const (
+	recapWrapperSel   = "#recap-wrapper, .recap-wrapper"
+	recapContainerSel = "#recap-container, .recap-container"
+)
+
+// awaitPromise makes chromedp.Evaluate settle a returned Promise instead of
+// serializing the still-pending Promise object into an empty result.
+func awaitPromise(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+	return p.WithAwaitPromise(true)
+}
+
 var log = zerolog.New(os.Stdout).With().Str("package", "gochrome").Timestamp().Logger()
 
 // Client renders recap images from NeonSportz web UI via headless Chrome (chromedp).
@@ -55,9 +70,9 @@ var log = zerolog.New(os.Stdout).With().Str("package", "gochrome").Timestamp().L
 // - Hide/remove cookie overlays (WITHOUT accepting cookies)
 // - Remove fixed app chrome (header/toolbars) so it can't overlay recap
 // - Wait recap assets (supports <img> and CSS background images)
-// - Ensure stadium background is applied to #recap-wrapper (some pages keep it outside wrapper)
+// - Ensure stadium background is applied to the recap wrapper (some pages keep it outside wrapper)
 // - Wait stadium bg image actually loads (preload via Image.onload)
-// - Screenshot #recap-wrapper (this matches the exported card styling best)
+// - Screenshot the recap wrapper (this matches the exported card styling best)
 type Client struct {
 	baseURL       string
 	league        string
@@ -407,8 +422,6 @@ func screenshotRecapWrapper(
 		}
 	}
 
-	const recapWrapperSel = "#recap-wrapper"
-
 	tasks := chromedp.Tasks{
 		setStage("emulation"),
 		emulation.SetDeviceMetricsOverride(int64(viewportW), int64(viewportH), 1.0, false),
@@ -450,7 +463,7 @@ func screenshotRecapWrapper(
 		ensureStadiumBackground(),
 
 		setStage("wait stadium"),
-		waitStadiumReady(10 * time.Second),
+		waitStadiumReady(20 * time.Second),
 
 		setStage("scroll into view"),
 		chromedp.ScrollIntoView(recapWrapperSel, chromedp.ByQuery),
@@ -459,7 +472,7 @@ func screenshotRecapWrapper(
 		stripConsentOverlay(),
 		removeAppChrome(),
 		ensureStadiumBackground(),
-		waitStadiumReady(5 * time.Second),
+		waitStadiumReady(10 * time.Second),
 
 		setStage("sleep after"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -599,7 +612,7 @@ func removeAppChrome() chromedp.Action {
 	})
 }
 
-// ensureStadiumBackground injects stadium background into #recap-wrapper if the page
+// ensureStadiumBackground injects stadium background into the recap wrapper if the page
 // keeps it outside wrapper (e.g., on parent container or via pseudo-elements).
 // It stores the chosen stadium URL in data-stadium-url for waitStadiumReady().
 func ensureStadiumBackground() chromedp.Action {
@@ -607,7 +620,7 @@ func ensureStadiumBackground() chromedp.Action {
 		js := `
 (() => {
   try {
-    const wrap = document.querySelector("#recap-wrapper");
+    const wrap = document.querySelector("` + recapWrapperSel + `");
     if (!wrap) return { ok:false, reason:"wrap_missing" };
 
     const extractUrl = (bg) => {
@@ -691,13 +704,18 @@ func ensureStadiumBackground() chromedp.Action {
 	})
 }
 
-// waitStadiumReady preloads the chosen stadium URL (stored in #recap-wrapper[data-stadium-url])
-// and waits for Image.onload. This prevents "partially rendered" bands in screenshot.
+// waitStadiumReady preloads the chosen stadium URL (stored in the recap wrapper's
+// data-stadium-url) and waits for Image.onload. This prevents "partially rendered"
+// bands in screenshot.
+//
+// The snippet is async, so it MUST be evaluated with awaitPromise: without it CDP
+// serializes the pending Promise as an empty object and every poll reads as
+// "not ready", burning the full maxWait on every single game.
 func waitStadiumReady(maxWait time.Duration) chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		js := `
 (async () => {
-  const wrap = document.querySelector("#recap-wrapper");
+  const wrap = document.querySelector("` + recapWrapperSel + `");
   if (!wrap) return { ok:false, reason:"wrap_missing" };
 
   const url = wrap.getAttribute("data-stadium-url") || "";
@@ -707,12 +725,17 @@ func waitStadiumReady(maxWait time.Duration) chromedp.Action {
     return { ok:true, ready:true, cached:true };
   }
 
-  const ok = await new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(true);
-    img.onerror = () => resolve(false);
-    img.src = url;
-  });
+  // Race against a timer so a hanging request can't block the evaluation
+  // past the caller's deadline.
+  const ok = await Promise.race([
+    new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(true);
+      img.onerror = () => resolve(false);
+      img.src = url;
+    }),
+    new Promise((resolve) => setTimeout(() => resolve(false), 5000)),
+  ]);
 
   wrap.setAttribute("data-stadium-ready", ok ? "1" : "0");
   return { ok: ok, ready: ok };
@@ -726,7 +749,7 @@ func waitStadiumReady(maxWait time.Duration) chromedp.Action {
 				Skipped bool   `json:"skipped"`
 				Reason  string `json:"reason"`
 			}
-			_ = chromedp.Evaluate(js, &res).Do(ctx)
+			_ = chromedp.Evaluate(js, &res, awaitPromise).Do(ctx)
 
 			if res.Skipped {
 				// nothing to wait for
@@ -797,7 +820,7 @@ func waitRecapWrapperRobust(maxWait time.Duration) chromedp.Action {
 		deadline := time.Now().Add(maxWait)
 		for time.Now().Before(deadline) {
 			var exists bool
-			err := chromedp.Evaluate(`!!document.querySelector("#recap-wrapper")`, &exists).Do(ctx)
+			err := chromedp.Evaluate(`!!document.querySelector("`+recapWrapperSel+`")`, &exists).Do(ctx)
 			if err == nil && exists {
 				return nil
 			}
@@ -815,10 +838,10 @@ func waitRecapAssetsLoadedSync(maxWait time.Duration) chromedp.Action {
 		js := `
 (() => {
   try {
-    const wrap = document.querySelector("#recap-wrapper");
+    const wrap = document.querySelector("` + recapWrapperSel + `");
     if (!wrap) return { ok:false, stage:"wrap_missing" };
 
-    const container = wrap.querySelector("#recap-container");
+    const container = wrap.querySelector("` + recapContainerSel + `");
     if (!container) return { ok:false, stage:"container_missing" };
 
     // Regular <img> tags
