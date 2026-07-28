@@ -17,6 +17,7 @@ import (
 	"github.com/colzphml/mega_games/discord_kafka_processor/internal/kafka"
 	"github.com/colzphml/mega_games/discord_kafka_processor/internal/parser"
 	"github.com/colzphml/mega_games/discord_kafka_processor/internal/store"
+	"github.com/colzphml/mega_games/internal/common/retry"
 )
 
 var errMessageNotReady = errors.New("discord message not ready")
@@ -136,21 +137,39 @@ func (p *Processor) consumeLoop(ctx context.Context) error {
 	}
 }
 
+// shouldChargeAttempt reports whether a failure counts against
+// PROCESS_MAX_ATTEMPTS. Transient failures do not: otherwise a
+// prolonged Discord outage would exhaust the budget and move perfectly
+// good messages to the failed table for good.
+func shouldChargeAttempt(err error) bool {
+	return retry.Classify(err) != retry.Transient
+}
+
 func (p *Processor) processMessage(ctx context.Context, messageID string, details map[string]any) {
-	if err := p.handleMessage(ctx, messageID); err != nil {
-		updated, updateErr := p.store.RecordAttempt(ctx, messageID, err.Error())
-		if updateErr != nil {
-			p.log.Error().Err(updateErr).Str("message_id", messageID).Msg("failed to record processing attempt")
-			return
-		}
-		if updated.Attempts >= p.cfg.MaxAttempts {
-			if moveErr := p.store.MoveToFailed(ctx, messageID, details); moveErr != nil {
-				p.log.Error().Err(moveErr).Str("message_id", messageID).Msg("failed to move message to failed table")
-			}
-			return
-		}
-		p.log.Error().Err(err).Str("message_id", messageID).Msg("failed to process message")
+	err := p.handleMessage(ctx, messageID)
+	if err == nil {
+		return
 	}
+
+	if !shouldChargeAttempt(err) {
+		p.log.Warn().Err(err).Str("message_id", messageID).
+			Str("error_kind", retry.Classify(err).String()).
+			Msg("transient failure, message stays queued without consuming an attempt")
+		return
+	}
+
+	updated, updateErr := p.store.RecordAttempt(ctx, messageID, err.Error())
+	if updateErr != nil {
+		p.log.Error().Err(updateErr).Str("message_id", messageID).Msg("failed to record processing attempt")
+		return
+	}
+	if updated.Attempts >= p.cfg.MaxAttempts {
+		if moveErr := p.store.MoveToFailed(ctx, messageID, details); moveErr != nil {
+			p.log.Error().Err(moveErr).Str("message_id", messageID).Msg("failed to move message to failed table")
+		}
+		return
+	}
+	p.log.Error().Err(err).Str("message_id", messageID).Msg("failed to process message")
 }
 
 func (p *Processor) handleMessage(ctx context.Context, messageID string) error {
@@ -217,7 +236,7 @@ func (p *Processor) fetchAndParse(ctx context.Context, messageID string) (parseR
 		cancel()
 		if err != nil {
 			lastErr = err
-			if !sleepWithContext(ctx, p.cfg.FetchDelay) {
+			if !retry.Sleep(ctx, p.cfg.FetchDelay) {
 				return parseResult{}, ctx.Err()
 			}
 			continue
@@ -229,7 +248,7 @@ func (p *Processor) fetchAndParse(ctx context.Context, messageID string) (parseR
 				return parseResult{Skip: true}, nil
 			}
 			lastErr = errMessageNotReady
-			if !sleepWithContext(ctx, p.cfg.FetchDelay) {
+			if !retry.Sleep(ctx, p.cfg.FetchDelay) {
 				return parseResult{}, ctx.Err()
 			}
 			continue
@@ -253,20 +272,6 @@ func isMessagePastWarmup(msg *discordgo.Message, warmup time.Duration) bool {
 		return false
 	}
 	return time.Since(msg.Timestamp) >= warmup
-}
-
-func sleepWithContext(ctx context.Context, delay time.Duration) bool {
-	if delay <= 0 {
-		return true
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
 }
 
 func kafkaDetails(msg kafkago.Message, reason string) map[string]any {
