@@ -9,6 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+
+	"github.com/colzphml/mega_games/internal/common/queue"
 )
 
 const (
@@ -175,6 +177,49 @@ func (s *Store) MoveToFailed(ctx context.Context, messageID string, details map[
 		}
 		return nil
 	})
+}
+
+// ListPending returns messages that still need work: fresh ones, and
+// ones abandoned mid-flight by a crashed worker. It replaces the Mongo
+// implementation that reprocessPending relied on.
+func (s *Store) ListPending(ctx context.Context, limit int, retryInterval time.Duration) ([]Message, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+
+	var rows pgx.Rows
+	var err error
+	if retryInterval > 0 {
+		cutoff := queue.StaleCutoff(time.Now(), retryInterval)
+		rows, err = s.pool.Query(ctx,
+			`SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload, image
+			 FROM game_image_status
+			 WHERE (status = $1 AND (last_attempt_at IS NULL OR last_attempt_at < $3))
+			    OR (status = $2 AND last_attempt_at < $3)
+			 ORDER BY created_at ASC LIMIT $4`,
+			queue.StatusNew, queue.StatusInProgress, cutoff, limit)
+	} else {
+		rows, err = s.pool.Query(ctx,
+			`SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload, image
+			 FROM game_image_status
+			 WHERE status = $1 ORDER BY created_at ASC LIMIT $2`,
+			queue.StatusNew, limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list pending: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var msg Message
+		if err := rows.Scan(&msg.ID, &msg.Status, &msg.Attempts, &msg.CreatedAt,
+			&msg.LastError, &msg.LastAttempt, &msg.Payload, &msg.Image); err != nil {
+			return nil, fmt.Errorf("scan pending: %w", err)
+		}
+		messages = append(messages, msg)
+	}
+	return messages, rows.Err()
 }
 
 func StatusProcessed() string {
