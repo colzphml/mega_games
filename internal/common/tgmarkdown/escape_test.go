@@ -28,3 +28,18 @@ func TestEscapeBrackets(t *testing.T) {
 		t.Errorf("Escape(%q) = %q", "a[b]c", got)
 	}
 }
+
+func TestEscapeLinkURLLeavesUnderscoreRaw(t *testing.T) {
+	got := EscapeLinkURL("t.me/some_user")
+	if got != "t.me/some_user" {
+		t.Errorf("EscapeLinkURL(%q) = %q, want unchanged: escaping '_' would break the URL", "t.me/some_user", got)
+	}
+}
+
+func TestEscapeLinkURLEscapesCloseParenAndBackslash(t *testing.T) {
+	got := EscapeLinkURL(`t.me/a)b\c`)
+	want := `t.me/a\)b\\c`
+	if got != want {
+		t.Errorf("EscapeLinkURL(%q) = %q, want %q", `t.me/a)b\c`, got, want)
+	}
+}

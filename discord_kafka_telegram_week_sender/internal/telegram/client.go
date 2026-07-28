@@ -49,7 +49,7 @@ func New(token, chatID string, log zerolog.Logger) (*Client, error) {
 func (c *Client) SendWeekMessage(text string) error {
 	msg := tgbotapi.NewMessage(c.chatID, text)
 	msg.DisableWebPagePreview = true
-	msg.ParseMode = "Markdown"
+	msg.ParseMode = "MarkdownV2"
 	if _, err := c.bot.Send(msg); err != nil {
 		return fmt.Errorf("send telegram message: %s", redactToken(err.Error(), c.bot.Token))
 	}

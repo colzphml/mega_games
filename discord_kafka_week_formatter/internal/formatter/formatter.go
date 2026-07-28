@@ -21,6 +21,12 @@ var announceDeadline = 40 * time.Hour
 // plainly.
 const postseasonNote = "Игра плейофф, расписание см. в игре"
 
+// cpuMarker is literal text, not link syntax, but "(" and ")" are reserved
+// in MarkdownV2 the same as "_" is: an unescaped "(CPU)" makes Telegram
+// reject the whole message with the same HTTP 400 an unescaped nickname
+// underscore would.
+const cpuMarker = `\(CPU\)`
+
 func BuildWeekMessage(payload store.WeekPayload, teams map[string]store.Team, games []store.Game) (string, error) {
 	if payload.Season == "" {
 		return "", fmt.Errorf("invalid week payload")
@@ -36,10 +42,10 @@ func BuildWeekMessage(payload store.WeekPayload, teams map[string]store.Team, ga
 	}
 
 	var textBuilder strings.Builder
-	textBuilder.WriteString(fmt.Sprintf("*%s*\n", title))
+	textBuilder.WriteString(fmt.Sprintf("*%s*\n", tgmarkdown.Escape(title)))
 
 	if payload.Season == "postseason" {
-		textBuilder.WriteString("\n" + postseasonNote + "\n")
+		textBuilder.WriteString("\n" + tgmarkdown.Escape(postseasonNote) + "\n")
 	} else {
 		for _, game := range games {
 			away, awayOK := teams[game.Away]
@@ -53,7 +59,8 @@ func BuildWeekMessage(payload store.WeekPayload, teams map[string]store.Team, ga
 
 	base := textBuilder.String()
 	deadline := time.Now().In(time.Local).Add(announceDeadline).Format("02 Jan 2006 15:04")
-	return fmt.Sprintf("%s\n\n_❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nДо %s просьба указать анонс матча реплаем к этому посту_", base, deadline), nil
+	footer := fmt.Sprintf("❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nДо %s просьба указать анонс матча реплаем к этому посту", deadline)
+	return fmt.Sprintf("%s\n\n_%s_", base, tgmarkdown.Escape(footer)), nil
 }
 
 // formatGameLine renders one "away @ home" line with CPU markers and
@@ -66,13 +73,13 @@ func formatGameLine(away, home store.Team) string {
 	homeCPU := isCPU(home.Player)
 	switch {
 	case awayCPU && homeCPU:
-		return fmt.Sprintf("\n%s(CPU) @ %s(CPU)", awayName, homeName)
+		return fmt.Sprintf("\n%s%s @ %s%s", awayName, cpuMarker, homeName, cpuMarker)
 	case awayCPU:
-		return fmt.Sprintf("\n%s(CPU) @ [%s](%s)", awayName, homeName, telegramLink(home.Player))
+		return fmt.Sprintf("\n%s%s @ [%s](%s)", awayName, cpuMarker, homeName, tgmarkdown.EscapeLinkURL(telegramLink(home.Player)))
 	case homeCPU:
-		return fmt.Sprintf("\n[%s](%s) @ %s(CPU)", awayName, telegramLink(away.Player), homeName)
+		return fmt.Sprintf("\n[%s](%s) @ %s%s", awayName, tgmarkdown.EscapeLinkURL(telegramLink(away.Player)), homeName, cpuMarker)
 	default:
-		return fmt.Sprintf("\n[%s](%s) @ [%s](%s)", awayName, telegramLink(away.Player), homeName, telegramLink(home.Player))
+		return fmt.Sprintf("\n[%s](%s) @ [%s](%s)", awayName, tgmarkdown.EscapeLinkURL(telegramLink(away.Player)), homeName, tgmarkdown.EscapeLinkURL(telegramLink(home.Player)))
 	}
 }
 
