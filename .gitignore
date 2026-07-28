@@ -48,3 +48,6 @@ screens/
 
 main
 admin_panel
+
+# SDD workspace (subagent-driven development scratch)
+.superpowers/

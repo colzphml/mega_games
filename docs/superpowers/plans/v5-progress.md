@@ -1,0 +1,50 @@
+# v5.0 — Прогресс
+
+Обновляется после каждой завершённой задачи. Источник истины по состоянию работ.
+
+**Ветка:** `release-5.0` · **Спека:** `docs/superpowers/specs/2026-07-28-mega-games-v5-design.md`
+**План:** `docs/superpowers/plans/2026-07-28-mega-games-v5.md` (+ `-part2`, `-part3`)
+
+| Задача | Статус | Ветка worktree | Смержено |
+|---|---|---|---|
+| V5-01 Единый Go-модуль | ⬜ | `v5/01-single-module` | — |
+| V5-02 common/config | ⬜ | `v5/02-common-config` | — |
+| V5-03 common/retry | ⬜ | `v5/03-common-retry` | — |
+| V5-04 common/health | ⬜ | `v5/04-common-health` | — |
+| V5-05 common/queue | ⬜ | `v5/05-common-queue` | — |
+| V5-06 Харнесс pgtest | ⬜ | `v5/06-pgtest` | — |
+| V5-07 Фикс дублей в TG | ⬜ | `v5/07-eligibility` | — |
+| V5-08 Классификация ошибок Discord | ⬜ | `v5/08-discord-errors` | — |
+| V5-09 health/ready | ⬜ | `v5/09-health-split` | — |
+| V5-10 Постсезон | ⬜ | `v5/10-postseason` | — |
+| V5-11 Экранирование Markdown | ⬜ | `v5/11-markdown-escape` | — |
+| V5-12 Метка fallback | ⬜ | `v5/12-fallback-flag` | — |
+| V5-13 Мелкие фиксы и мёртвый код | ⬜ | `v5/13-cleanup` | — |
+| V5-14 ListPending в pgstore | ⬜ | `v5/14-pgstore-listpending` | — |
+| V5-15 Удаление MongoDB | ⬜ | `v5/15-drop-mongo` | — |
+| V5-16 Оптимизация gochrome | ⬜ | `v5/16-chrome-reuse` | — |
+| V5-17 Окно дашборда | ⬜ | `v5/17-dashboard-window` | — |
+| V5-18 Интерфейсы | ⬜ | `v5/18-interfaces` | — |
+| V5-19 Тесты Telegram | ⬜ | `v5/19-telegram-tests` | — |
+| V5-20 Тесты Discord | ⬜ | `v5/20-discord-tests` | — |
+| V5-21 Тесты NeonSportz | ⬜ | `v5/21-neonsportz-tests` | — |
+| V5-22 Тесты MinIO/Redpanda | ⬜ | `v5/22-storage-tests` | — |
+| V5-23 Redpanda | ⬜ | `v5/23-redpanda` | — |
+| V5-24 Лимиты и логи | ⬜ | `v5/24-limits` | — |
+| V5-25 Безопасность | ⬜ | `v5/25-security` | — |
+| V5-26 Обязательный TAG | ⬜ | `v5/26-tag-required` | — |
+| V5-27 Конфигурация и хост | ⬜ | `v5/27-config` | — |
+| V5-28 Документация для агентов | ⬜ | `v5/28-agent-docs` | — |
+| V5-29 README и AGENTS.md | ⬜ | `v5/29-docs` | — |
+| V5-30 Миграция и выкатка | ⬜ | `v5/30-release` | — |
+| V5-31 Устойчивость headless | ⬜ | `v5/31-headless-resilience` | — |
+
+Легенда: ⬜ не начата · 🟡 в работе · ✅ смержена · ❌ заблокирована
+
+## Журнал решений по ходу работ
+
+Сюда записывается всё, что отклонилось от плана, с причиной.
+
+| Дата | Задача | Отклонение | Причина |
+|---|---|---|---|
+| 2026-07-28 | setup | `v5-progress.md` создан до старта, а не в V5-28 | Global Constraints требуют обновлять трекер после каждой задачи — файл должен существовать с самого начала |
