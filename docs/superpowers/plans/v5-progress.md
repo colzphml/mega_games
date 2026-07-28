@@ -15,7 +15,7 @@
 | V5-06 Харнесс pgtest | ✅ | `v5/06-pgtest` | 5dfb47d |
 | V5-07 Фикс дублей в TG | ✅ | `v5/07-eligibility` | 60a8ece |
 | V5-08 Классификация ошибок Discord | ✅ | `v5/08-discord-errors` | 6c940f0 |
-| V5-09 health/ready | ⬜ | `v5/09-health-split` | — |
+| V5-09 health/ready | ✅ | `v5/09-health-split` | bd747d6 |
 | V5-10 Постсезон | ⬜ | `v5/10-postseason` | — |
 | V5-11 Экранирование Markdown | ⬜ | `v5/11-markdown-escape` | — |
 | V5-12 Метка fallback | ✅ | `v5/12-fallback-flag` | db947b9 |
