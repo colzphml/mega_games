@@ -107,7 +107,7 @@ func (c *Client) Fetch(ctx context.Context, gameID string) (types.Result, error)
 	recap, err := fetchRecapJSON(apiURL, defaultUserAgent, defaultAPITimeout)
 	if err != nil {
 		if isRecoverablePrecheckError(err) {
-			log.Warn().Err(err).Str("game_id", gameID).Msg("recap precheck degraded, fallback to metadata card")
+			log.Error().Err(err).Str("game_id", gameID).Msg("recap precheck degraded, fallback to metadata card")
 			return buildFallbackResult(metaURL, gameURL, league, gameID)
 		}
 		return types.Result{}, fmt.Errorf("api precheck failed: %w", err)
@@ -122,7 +122,7 @@ func (c *Client) Fetch(ctx context.Context, gameID string) (types.Result, error)
 	// 2) Headless Chrome screenshot
 	pngBytes, err := screenshotRecapWrapper(ctx, gameURL, defaultTimeout, c.headless, defaultSleepAfter, defaultAssetsWait, defaultViewportW, defaultViewportH)
 	if err != nil {
-		log.Warn().Err(err).Str("game_id", gameID).Msg("screenshot failed, fallback to metadata card")
+		log.Error().Err(err).Str("game_id", gameID).Msg("screenshot failed, fallback to metadata card")
 		return buildFallbackResult(metaURL, gameURL, league, gameID)
 	}
 	if len(pngBytes) == 0 {
@@ -171,6 +171,7 @@ func buildFallbackResult(metaURL, gameURL, league, gameID string) (types.Result,
 		GameURL:     gameURL,
 		ContentType: "image/png",
 		Image:       imageBytes,
+		Degraded:    true,
 	}, nil
 }
 

@@ -28,6 +28,7 @@ type DashboardMessage struct {
 	TelegramGameStatus  string
 	GameID              string
 	ImageURL            string
+	Degraded            bool
 	WeekText            string
 	Errors              string
 	DropReason          string
@@ -93,6 +94,7 @@ func (h *DashboardHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			TelegramGameStatus:  message.TelegramGameStatus,
 			GameID:              fallbackValue(message.GameID, "n/a"),
 			ImageURL:            resolveImageURL(r, message.ImageURL),
+			Degraded:            strings.HasSuffix(message.Fetcher, "-fallback"),
 			WeekText:            fallbackValue(message.WeekText, "n/a"),
 			Errors:              errorsText,
 			DropReason:          fallbackValue(message.DropReason, ""),

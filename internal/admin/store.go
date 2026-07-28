@@ -41,6 +41,7 @@ type UnifiedMessage struct {
 	TelegramGameStatus  string
 	GameID              string
 	ImageURL            string
+	Fetcher             string
 	WeekText            string
 	Errors              []string
 	DropReason          string
@@ -227,6 +228,7 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 			tg.status AS telegram_game_status,
 			COALESCE(g.payload->>'game_id', gf.payload->>'game_id') AS game_id,
 			COALESCE(g.image->>'image_url', gf.image->>'image_url') AS image_url,
+			COALESCE(g.image->>'fetcher', gf.image->>'fetcher') AS image_fetcher,
 			w.payload->>'title' AS week_title,
 			w.payload->>'season' AS week_season,
 			w.payload->>'week' AS week_number,
@@ -267,6 +269,7 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 		var telegramGameStatus *string
 		var gameID *string
 		var imageURL *string
+		var imageFetcher *string
 		var weekTitle *string
 		var weekSeason *string
 		var weekNumber *string
@@ -292,6 +295,7 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 			&telegramGameStatus,
 			&gameID,
 			&imageURL,
+			&imageFetcher,
 			&weekTitle,
 			&weekSeason,
 			&weekNumber,
@@ -317,6 +321,7 @@ func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMe
 		msg.TelegramGameStatus = normalizeStatus(telegramGameStatus)
 		msg.GameID = normalizeValue(gameID)
 		msg.ImageURL = normalizeValue(imageURL)
+		msg.Fetcher = normalizeValue(imageFetcher)
 		msg.WeekText = formatWeekText(weekTitle, weekSeason, weekNumber)
 		msg.Errors, msg.DropReason = buildErrorDetails(errorCandidates{
 			processor: errorCandidate{message: processorError, updatedAt: processorUpdatedAt},

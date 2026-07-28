@@ -31,6 +31,7 @@
                     <a href="{{.ImageURL}}" target="_blank" rel="noopener">
                         <img src="{{.ImageURL}}" alt="Game image" style="max-width: 56px; height: auto; display: block;">
                     </a>
+                    {{if .Degraded}}<small style="color: #b45309;">fallback</small>{{end}}
                     {{else}}
                     <small style="color: #888;">-</small>
                     {{end}}

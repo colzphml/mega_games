@@ -226,13 +226,18 @@ func (p *Processor) handleMessage(ctx context.Context, msg store.GameMessage) er
 			return err
 		}
 
+		fetcherName := p.cfg.FetcherType
+		if result.Degraded {
+			fetcherName += "-fallback"
+		}
+
 		meta = &store.ImageMeta{
 			ImageURL:    upload.URL,
 			Bucket:      upload.Bucket,
 			ObjectKey:   upload.ObjectKey,
 			ContentType: upload.ContentType,
 			Size:        upload.Size,
-			Fetcher:     p.cfg.FetcherType,
+			Fetcher:     fetcherName,
 			StoredAt:    time.Now(),
 		}
 	}
@@ -251,7 +256,7 @@ func (p *Processor) handleMessage(ctx context.Context, msg store.GameMessage) er
 		ContentType:     meta.ContentType,
 		Size:            meta.Size,
 		StoredAt:        meta.StoredAt,
-		Fetcher:         p.cfg.FetcherType,
+		Fetcher:         meta.Fetcher,
 	}
 	payloadBytes, err := json.Marshal(event)
 	if err != nil {
