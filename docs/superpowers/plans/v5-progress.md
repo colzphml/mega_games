@@ -11,7 +11,7 @@
 | V5-02 common/config | ✅ | `v5/02-common-config` | c537319 |
 | V5-03 common/retry | ✅ | `v5/03-common-retry` | c1db5aa |
 | V5-04 common/health | ✅ | `v5/04-common-health` | a30ef84 |
-| V5-05 common/queue | ⬜ | `v5/05-common-queue` | — |
+| V5-05 common/queue | ✅ | `v5/05-common-queue` | b8ca663 |
 | V5-06 Харнесс pgtest | ⬜ | `v5/06-pgtest` | — |
 | V5-07 Фикс дублей в TG | ⬜ | `v5/07-eligibility` | — |
 | V5-08 Классификация ошибок Discord | ⬜ | `v5/08-discord-errors` | — |
