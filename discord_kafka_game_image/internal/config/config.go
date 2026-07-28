@@ -35,7 +35,6 @@ const (
 	defaultMinioMaxAttempts      = 30
 	defaultMinioUploadTimeout    = 30 * time.Second
 	defaultFetchTimeout          = 6 * time.Minute
-	defaultSeleniumDownloadDir   = "/home/seluser/Downloads"
 	defaultGoChromeHeadless      = true
 	defaultMinioObjectPrefix     = "game-recaps"
 	defaultMongoCollection       = "game_images"
@@ -86,8 +85,6 @@ type Config struct {
 	BaseURL             string
 	League              string
 	FetchTimeout        time.Duration
-	SeleniumURL         string
-	SeleniumDownloadDir string
 	GoChromeHeadless    bool
 
 	HealthAddr           string
@@ -204,8 +201,6 @@ func Load() (Config, error) {
 	if cfg.FetchTimeout, err = durationEnv("GAME_IMAGE_FETCH_TIMEOUT", defaultFetchTimeout); err != nil {
 		return Config{}, err
 	}
-	cfg.SeleniumURL = optionalEnv("SELENIUM_URL", "")
-	cfg.SeleniumDownloadDir = optionalEnv("SELENIUM_DOWNLOAD_DIR", defaultSeleniumDownloadDir)
 	if cfg.GoChromeHeadless, err = boolEnv("GOCHROME_HEADLESS", defaultGoChromeHeadless); err != nil {
 		return Config{}, err
 	}
@@ -217,10 +212,6 @@ func Load() (Config, error) {
 	}
 	if cfg.ProcessRetryInterval, err = durationEnv("PROCESS_RETRY_INTERVAL", defaultRetryInterval); err != nil {
 		return Config{}, err
-	}
-
-	if strings.EqualFold(cfg.FetcherType, "selenium") && cfg.SeleniumURL == "" {
-		return Config{}, fmt.Errorf("SELENIUM_URL is required when GAME_IMAGE_FETCHER_TYPE=selenium")
 	}
 
 	return cfg, nil

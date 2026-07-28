@@ -586,20 +586,24 @@ func drawFooter(dc *gg.Context, x, y, w float64, logo image.Image) {
 	}
 }
 
-// parseColor преобразует десятичную строку цвета в цвет RGBA
+// parseColor converts NeonSportz's decimal colour into RGBA.
+// Values outside the 24-bit range are clamped rather than sliced: the
+// old code took the first two characters of a seven-digit hex string
+// and produced an unrelated colour.
 func parseColor(dec string) color.RGBA {
-	// decimal string → int
-	i, _ := strconv.ParseInt(dec, 10, 64)
-	hex := strconv.FormatInt(i, 16)
-	// заполняем ведущие нули
-	for len(hex) < 6 {
-		hex = "0" + hex
+	value, err := strconv.ParseInt(strings.TrimSpace(dec), 10, 64)
+	if err != nil || value < 0 {
+		return color.RGBA{0, 0, 0, 255}
 	}
-	// разбиваем
-	r, _ := strconv.ParseInt(hex[0:2], 16, 64)
-	g, _ := strconv.ParseInt(hex[2:4], 16, 64)
-	b, _ := strconv.ParseInt(hex[4:6], 16, 64)
-	return color.RGBA{uint8(r), uint8(g), uint8(b), 255}
+	if value > 0xFFFFFF {
+		value &= 0xFFFFFF
+	}
+	return color.RGBA{
+		R: uint8((value >> 16) & 0xFF),
+		G: uint8((value >> 8) & 0xFF),
+		B: uint8(value & 0xFF),
+		A: 255,
+	}
 }
 
 // загрузка шрифта Roboto

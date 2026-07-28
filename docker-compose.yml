@@ -183,17 +183,6 @@ services:
     networks:
       - megagames-net
 
-  selenium-chrome:
-    image: selenium/standalone-chrome:latest
-    restart: unless-stopped
-    profiles:
-      - selenium
-    shm_size: 2gb
-    volumes:
-      - selenium-downloads:/home/seluser/Downloads
-    networks:
-      - megagames-net
-
   discord-kafka-processor:
     image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-processor:${TAG:-4.3.2}
     build:
@@ -282,8 +271,6 @@ services:
       start_period: 10s
     labels:
       - autoheal=true
-    volumes:
-      - selenium-downloads:/home/seluser/Downloads
     networks:
       - megagames-net
 
@@ -477,7 +464,6 @@ volumes:
   grafana-data:
   loki-data:
   promtail-data:
-  selenium-downloads:
 
 networks:
   megagames-net:

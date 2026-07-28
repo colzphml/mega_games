@@ -77,7 +77,6 @@ func (w *BufferedWriter) Run(ctx context.Context, onSuccess func(string)) {
 	pending := make(map[string]struct{})
 	var timer *time.Timer
 	var timerC <-chan time.Time
-	var processing string
 
 	for {
 		if queue.Len() == 0 {
@@ -115,9 +114,6 @@ func (w *BufferedWriter) Run(ctx context.Context, onSuccess func(string)) {
 			if id == "" {
 				continue
 			}
-			if id == processing {
-				continue
-			}
 			if _, ok := pending[id]; ok {
 				continue
 			}
@@ -138,11 +134,9 @@ func (w *BufferedWriter) Run(ctx context.Context, onSuccess func(string)) {
 			}
 			item := heap.Pop(&queue).(*retryItem)
 			delete(pending, item.id)
-			processing = item.id
 			writeCtx, cancel := context.WithTimeout(ctx, w.cfg.WriteTimeout)
 			err := w.producer.WriteMessage(writeCtx, item.id)
 			cancel()
-			processing = ""
 			if err == nil {
 				onSuccess(item.id)
 				continue
@@ -184,7 +178,6 @@ type retryItem struct {
 	id          string
 	attempts    int
 	nextAttempt time.Time
-	index       int
 }
 
 type retryHeap []*retryItem
@@ -200,13 +193,10 @@ func (h retryHeap) Less(i, j int) bool {
 
 func (h retryHeap) Swap(i, j int) {
 	h[i], h[j] = h[j], h[i]
-	h[i].index = i
-	h[j].index = j
 }
 
 func (h *retryHeap) Push(x interface{}) {
 	item := x.(*retryItem)
-	item.index = len(*h)
 	*h = append(*h, item)
 }
 
@@ -214,7 +204,6 @@ func (h *retryHeap) Pop() interface{} {
 	old := *h
 	n := len(old)
 	item := old[n-1]
-	item.index = -1
 	*h = old[:n-1]
 	return item
 }

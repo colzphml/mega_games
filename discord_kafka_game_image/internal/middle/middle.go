@@ -6,7 +6,6 @@ import (
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/config"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/middle/gochrome"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/middle/headless"
-	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/middle/selenium"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/types"
 )
 
@@ -17,8 +16,6 @@ type Fetcher interface {
 
 func NewFetcher(ctx context.Context, cfg config.Config) (Fetcher, error) {
 	switch cfg.FetcherType {
-	case "selenium":
-		return selenium.NewClient(ctx, cfg)
 	case "gochrome":
 		return gochrome.NewClient(ctx, cfg)
 	case "headless":

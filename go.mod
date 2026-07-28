@@ -13,7 +13,6 @@ require (
 	github.com/minio/minio-go/v7 v7.0.76
 	github.com/rs/zerolog v1.34.0
 	github.com/segmentio/kafka-go v0.4.50
-	github.com/tebeka/selenium v0.9.9
 	github.com/testcontainers/testcontainers-go v0.43.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.43.0
 	go.mongodb.org/mongo-driver v1.17.1
@@ -24,7 +23,6 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
