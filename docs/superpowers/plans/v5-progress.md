@@ -7,7 +7,7 @@
 
 | Задача | Статус | Ветка worktree | Смержено |
 |---|---|---|---|
-| V5-01 Единый Go-модуль | ⬜ | `v5/01-single-module` | — |
+| V5-01 Единый Go-модуль | ✅ | `v5/01-single-module` | 8939a9c |
 | V5-02 common/config | ⬜ | `v5/02-common-config` | — |
 | V5-03 common/retry | ⬜ | `v5/03-common-retry` | — |
 | V5-04 common/health | ⬜ | `v5/04-common-health` | — |
