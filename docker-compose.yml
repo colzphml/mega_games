@@ -394,6 +394,8 @@ services:
   loki:
     image: grafana/loki:3.1.1
     restart: unless-stopped
+    profiles:
+      - monitoring
     command: -config.file=/etc/loki/config.yaml
     ports:
       - "${LOKI_EXPOSE_PORT:-3100}:3100"
@@ -414,6 +416,8 @@ services:
   promtail:
     image: grafana/promtail:3.1.1
     restart: unless-stopped
+    profiles:
+      - monitoring
     command: -config.file=/etc/promtail/config.yaml
     depends_on:
       loki:
@@ -436,6 +440,8 @@ services:
   grafana:
     image: grafana/grafana:11.1.0
     restart: unless-stopped
+    profiles:
+      - monitoring
     ports:
       - "${GRAFANA_EXPOSE_PORT:-3000}:3000"
     environment:
