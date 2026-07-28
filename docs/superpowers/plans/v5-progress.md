@@ -20,7 +20,7 @@
 | V5-11 Экранирование Markdown | ⬜ | `v5/11-markdown-escape` | — |
 | V5-12 Метка fallback | ✅ | `v5/12-fallback-flag` | db947b9 |
 | V5-13 Мелкие фиксы и мёртвый код | ✅ | `v5/13-cleanup` | 777b077 |
-| V5-14 ListPending в pgstore | ⬜ | `v5/14-pgstore-listpending` | — |
+| V5-14 ListPending в pgstore | ✅ | `v5/14-pgstore-listpending` | 2ccf46e |
 | V5-15 Удаление MongoDB | ⬜ | `v5/15-drop-mongo` | — |
 | V5-16 Оптимизация gochrome | ⬜ | `v5/16-chrome-reuse` | — |
 | V5-17 Окно дашборда | ⬜ | `v5/17-dashboard-window` | — |
