@@ -1,0 +1,60 @@
+{
+  "id": "1511787414060798042",
+  "timestamp": "2026-06-03T17:43:27.164000+00:00",
+  "embeds": [
+    {
+      "type": "rich",
+      "url": "https://neonsportz.com/leagues/MEGA/games",
+      "title": "MEGA - Week 14 Games (New)",
+      "color": 45300,
+      "fields": [
+        {
+          "name": "​",
+          "value": "**[49ers (5-8-0) 21 - 23 Rams (8-5-0)](https://neonsportz.com/leagues/MEGA/games/18294129)**\n<@100000000000000001> - <@100000000000000002>",
+          "inline": false
+        },
+        {
+          "name": "​",
+          "value": "**[Commanders (9-4-0) 24 - 14 Giants (4-9-0)](https://neonsportz.com/leagues/MEGA/games/18294130)**\n<@100000000000000003> - <@100000000000000004>",
+          "inline": false
+        },
+        {
+          "name": "​",
+          "value": "**[Lions (9-4-0) 30 - 24 Bears (4-9-0)](https://neonsportz.com/leagues/MEGA/games/18294131)**\nCPU - <@100000000000000005>",
+          "inline": false
+        },
+        {
+          "name": "​",
+          "value": "**[Vikings (7-6-0) 21 - 23 Cardinals (3-10-0)](https://neonsportz.com/leagues/MEGA/games/18294128)**\n<@100000000000000006> - <@100000000000000007>",
+          "inline": false
+        },
+        {
+          "name": "​",
+          "value": "**[Browns (2-11-0) 14 - 20 Bengals (11-2-0)](https://neonsportz.com/leagues/MEGA/games/18294119)**\nCPU - <@100000000000000008>",
+          "inline": false
+        },
+        {
+          "name": "​",
+          "value": "**[Packers (8-5-0) 41 - 17 Jaguars (3-10-0)](https://neonsportz.com/leagues/MEGA/games/18294120)**\nCPU - CPU",
+          "inline": false
+        },
+        {
+          "name": "​",
+          "value": "**[Colts (7-6-0) 34 - 17 Texans (4-9-0)](https://neonsportz.com/leagues/MEGA/games/18294121)**\n<@100000000000000009> - <@100000000000000010>",
+          "inline": false
+        },
+        {
+          "name": "​",
+          "value": "**[Buccaneers (1-12-0) 17 - 23 Panthers (7-6-0)](https://neonsportz.com/leagues/MEGA/games/18294122)**\n<@100000000000000011> - <@100000000000000012>",
+          "inline": false
+        },
+        {
+          "name": "​",
+          "value": "**[Saints (11-2-0) 28 - 24 Raiders (4-9-0)](https://neonsportz.com/leagues/MEGA/games/18294126)**\n<@100000000000000013> - CPU",
+          "inline": false
+        }
+      ],
+      "content_scan_version": 0
+    }
+  ]
+}

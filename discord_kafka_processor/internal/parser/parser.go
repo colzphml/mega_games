@@ -12,7 +12,10 @@ import (
 var (
 	gameNumberRe = regexp.MustCompile(`(?i)game\s*([0-9]+)`) // e.g. Game 12
 	gameURLRe    = regexp.MustCompile(`(?i)MEGA/games/(\d+)`)
-	weekNumberRe = regexp.MustCompile(`\d+`)
+	// weekAfterKeywordRe anchors on the word "Week" so a title like
+	// "Week 3 of 17" yields 3. The previous unanchored `\d+` scan kept
+	// the last number found anywhere in the title.
+	weekAfterKeywordRe = regexp.MustCompile(`(?i)week\s+(\d+)`)
 )
 
 type WeekUpdate struct {
@@ -94,8 +97,8 @@ func parseWeek(title string) (*WeekUpdate, bool) {
 	}
 
 	week := 0
-	for _, match := range weekNumberRe.FindAllString(title, -1) {
-		if parsed, err := strconv.Atoi(match); err == nil {
+	if m := weekAfterKeywordRe.FindStringSubmatch(title); len(m) == 2 {
+		if parsed, err := strconv.Atoi(m[1]); err == nil {
 			week = parsed
 		}
 	}
