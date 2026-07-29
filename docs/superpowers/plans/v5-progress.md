@@ -23,7 +23,7 @@
 | V5-14 ListPending в pgstore | ✅ | `v5/14-pgstore-listpending` | 2ccf46e |
 | V5-15 Удаление MongoDB | ✅ | `v5/15-drop-mongo` | f884e11 |
 | V5-16 Оптимизация gochrome | ✅ | `v5/16-chrome-reuse` | 718dee3 |
-| V5-17 Окно дашборда | ⬜ | `v5/17-dashboard-window` | — |
+| V5-17 Окно дашборда | ✅ | `v5/17-dashboard-window` | 23cda0c |
 | V5-18 Интерфейсы | ⬜ | `v5/18-interfaces` | — |
 | V5-19 Тесты Telegram | ⬜ | `v5/19-telegram-tests` | — |
 | V5-20 Тесты Discord | ⬜ | `v5/20-discord-tests` | — |
