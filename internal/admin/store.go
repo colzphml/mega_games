@@ -190,70 +190,96 @@ func (s *Store) GetStatusCounts(ctx context.Context) (map[string]map[string]int,
 	return result, nil
 }
 
-func (s *Store) ListUnifiedMessages(ctx context.Context, limit int) ([]UnifiedMessage, error) {
+// unifiedSelectTail is the projection, six-way LEFT JOIN, and final
+// ordering shared by ListUnifiedMessages. It intentionally carries no
+// placeholders of its own: $1 (limit) and $2 (cutoff) are both consumed
+// by the CTE that precedes it, so these JOINs run against the at-most-
+// `limit` rows `base` already narrowed down to, not the full tables.
+const unifiedSelectTail = `
+		base.message_id,
+		base.created_at,
+		d.status AS processor_status,
+		w.status AS week_formatter_status,
+		CASE
+			WHEN g.status IS NOT NULL THEN g.status
+			WHEN gf.message_id IS NOT NULL THEN 'failed'
+			ELSE NULL
+		END AS game_image_status,
+		tw.status AS telegram_week_status,
+		tg.status AS telegram_game_status,
+		COALESCE(g.payload->>'game_id', gf.payload->>'game_id') AS game_id,
+		COALESCE(g.image->>'image_url', gf.image->>'image_url') AS image_url,
+		COALESCE(g.image->>'fetcher', gf.image->>'fetcher') AS image_fetcher,
+		w.payload->>'title' AS week_title,
+		w.payload->>'season' AS week_season,
+		w.payload->>'week' AS week_number,
+		d.last_error AS processor_error,
+		w.last_error AS week_formatter_error,
+		COALESCE(g.last_error, gf.last_error) AS game_image_error,
+		tw.last_error AS telegram_week_error,
+		tg.last_error AS telegram_game_error,
+		d.updated_at AS processor_updated_at,
+		w.updated_at AS week_formatter_updated_at,
+		COALESCE(g.updated_at, gf.last_attempt_at, gf.failed_at) AS game_image_updated_at,
+		tw.updated_at AS telegram_week_updated_at,
+		tg.updated_at AS telegram_game_updated_at,
+		gf.details->>'reason' AS game_image_failed_reason,
+		gf.details->>'source' AS game_image_failed_source
+	FROM base
+	LEFT JOIN discord_message_status d ON d.message_id = base.message_id
+	LEFT JOIN week_message_status w ON w.message_id = base.message_id
+	LEFT JOIN game_image_status g ON g.message_id = base.message_id
+	LEFT JOIN game_image_failed gf ON gf.message_id = base.message_id
+	LEFT JOIN telegram_week_status tw ON tw.message_id = base.message_id
+	LEFT JOIN telegram_game_status tg ON tg.message_id = base.message_id
+	ORDER BY base.created_at DESC
+`
+
+// ListUnifiedMessages returns recent pipeline activity.
+//
+// The window matters: the CTE unions six status tables and groups the
+// result, so without a date bound every dashboard render scanned every
+// row ever written — that scan is where the idle admin panel's CPU went.
+// History is untouched; only the view is bounded. LIMIT and the first
+// ORDER BY live inside the `base` CTE, so the six LEFT JOINs in
+// unifiedSelectTail run against at most `limit` rows instead of the full
+// status tables. The trailing ORDER BY in unifiedSelectTail is not
+// redundant: a LEFT JOIN is free to reorder rows, so without it the
+// result order would no longer be guaranteed to match `base`.
+func (s *Store) ListUnifiedMessages(ctx context.Context, limit int, window time.Duration) ([]UnifiedMessage, error) {
 	if limit <= 0 {
 		limit = 50
 	}
+	if window <= 0 {
+		window = 30 * 24 * time.Hour
+	}
+	cutoff := time.Now().Add(-window)
 
 	rows, err := s.pool.Query(ctx, `
 		WITH all_messages AS (
-			SELECT message_id, created_at FROM discord_message_status
+			SELECT message_id, created_at FROM discord_message_status WHERE created_at > $2
 			UNION ALL
-			SELECT message_id, created_at FROM week_message_status
+			SELECT message_id, created_at FROM week_message_status WHERE created_at > $2
 			UNION ALL
-			SELECT message_id, created_at FROM game_image_status
+			SELECT message_id, created_at FROM game_image_status WHERE created_at > $2
 			UNION ALL
-			SELECT message_id, COALESCE(last_attempt_at, failed_at, first_seen_at) AS created_at FROM game_image_failed
+			SELECT message_id, COALESCE(last_attempt_at, failed_at, first_seen_at) AS created_at
+			  FROM game_image_failed
+			 WHERE COALESCE(last_attempt_at, failed_at, first_seen_at) > $2
 			UNION ALL
-			SELECT message_id, created_at FROM telegram_week_status
+			SELECT message_id, created_at FROM telegram_week_status WHERE created_at > $2
 			UNION ALL
-			SELECT message_id, created_at FROM telegram_game_status
+			SELECT message_id, created_at FROM telegram_game_status WHERE created_at > $2
 		),
 		base AS (
 			SELECT message_id, MAX(created_at) AS created_at
 			FROM all_messages
 			GROUP BY message_id
+			ORDER BY created_at DESC
+			LIMIT $1
 		)
 		SELECT
-			base.message_id,
-			base.created_at,
-			d.status AS processor_status,
-			w.status AS week_formatter_status,
-			CASE
-				WHEN g.status IS NOT NULL THEN g.status
-				WHEN gf.message_id IS NOT NULL THEN 'failed'
-				ELSE NULL
-			END AS game_image_status,
-			tw.status AS telegram_week_status,
-			tg.status AS telegram_game_status,
-			COALESCE(g.payload->>'game_id', gf.payload->>'game_id') AS game_id,
-			COALESCE(g.image->>'image_url', gf.image->>'image_url') AS image_url,
-			COALESCE(g.image->>'fetcher', gf.image->>'fetcher') AS image_fetcher,
-			w.payload->>'title' AS week_title,
-			w.payload->>'season' AS week_season,
-			w.payload->>'week' AS week_number,
-			d.last_error AS processor_error,
-			w.last_error AS week_formatter_error,
-			COALESCE(g.last_error, gf.last_error) AS game_image_error,
-			tw.last_error AS telegram_week_error,
-			tg.last_error AS telegram_game_error,
-			d.updated_at AS processor_updated_at,
-			w.updated_at AS week_formatter_updated_at,
-			COALESCE(g.updated_at, gf.last_attempt_at, gf.failed_at) AS game_image_updated_at,
-			tw.updated_at AS telegram_week_updated_at,
-			tg.updated_at AS telegram_game_updated_at,
-			gf.details->>'reason' AS game_image_failed_reason,
-			gf.details->>'source' AS game_image_failed_source
-		FROM base
-		LEFT JOIN discord_message_status d ON d.message_id = base.message_id
-		LEFT JOIN week_message_status w ON w.message_id = base.message_id
-		LEFT JOIN game_image_status g ON g.message_id = base.message_id
-		LEFT JOIN game_image_failed gf ON gf.message_id = base.message_id
-		LEFT JOIN telegram_week_status tw ON tw.message_id = base.message_id
-		LEFT JOIN telegram_game_status tg ON tg.message_id = base.message_id
-		ORDER BY base.created_at DESC
-		LIMIT $1
-	`, limit)
+	`+unifiedSelectTail, limit, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query unified messages: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -72,7 +73,7 @@ func NewDashboardHandler(store *Store) (*DashboardHandler, error) {
 }
 
 func (h *DashboardHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
-	messages, err := h.store.ListUnifiedMessages(r.Context(), 50)
+	messages, err := h.store.ListUnifiedMessages(r.Context(), 50, 30*24*time.Hour)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to get unified messages")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
