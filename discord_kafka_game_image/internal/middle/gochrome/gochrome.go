@@ -80,10 +80,12 @@ type Client struct {
 	headless      bool
 	screenshotDir string
 
-	mu          sync.Mutex
-	allocCtx    context.Context
-	allocCancel context.CancelFunc
-	renders     int
+	mu            sync.Mutex
+	allocCtx      context.Context
+	allocCancel   context.CancelFunc
+	browserCtx    context.Context
+	browserCancel context.CancelFunc
+	renders       int
 }
 
 // maxRendersPerBrowser bounds how long one Chromium process lives.
@@ -101,20 +103,28 @@ func NewClient(ctx context.Context, cfg config.Config) (*Client, error) {
 	}, nil
 }
 
-// allocator returns a shared browser allocator, starting or recycling
-// it as needed. Callers must not hold the lock while rendering.
-func (c *Client) allocator() context.Context {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.allocCtx != nil && c.renders < maxRendersPerBrowser {
+// ensureBrowserLocked returns a warmed-up chromedp browser context,
+// creating or recycling the underlying Chrome process as needed. Callers
+// must hold c.mu.
+//
+// This is deliberately three layers, not two. chromedp.NewContext only
+// attaches a new *tab* to an existing browser if the parent context it's
+// given already carries an allocated chromedp Context.Browser; a bare
+// allocator context from NewExecAllocator never does, so its first Run
+// would launch a brand new Chrome process every time, no matter how many
+// times the same allocator context is reused (see chromedp's own doc
+// comment on Run). The empty warm-up Run below is what actually allocates
+// the browser and fills in Context.Browser; every subsequent
+// chromedp.NewContext(browserCtx) call — one per game, in
+// screenshotRecapWrapper — then opens a new tab on that same browser
+// instead of spawning its own process.
+func (c *Client) ensureBrowserLocked() (context.Context, error) {
+	if c.browserCtx != nil && c.renders < maxRendersPerBrowser {
 		c.renders++
-		return c.allocCtx
+		return c.browserCtx, nil
 	}
 
-	if c.allocCancel != nil {
-		c.allocCancel()
-	}
+	c.teardownLocked()
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("hide-scrollbars", true),
@@ -125,19 +135,84 @@ func (c *Client) allocator() context.Context {
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 	)
-	c.allocCtx, c.allocCancel = chromedp.NewExecAllocator(context.Background(), opts...)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+
+	// No timeout wrapped around this first Run: chromedp's docs warn that
+	// a context timeout on the very first Run tears down the whole
+	// browser it just allocated, not just this call.
+	if err := chromedp.Run(browserCtx); err != nil {
+		browserCancel()
+		allocCancel()
+		return nil, fmt.Errorf("warm up browser: %w", err)
+	}
+
+	c.allocCtx, c.allocCancel = allocCtx, allocCancel
+	c.browserCtx, c.browserCancel = browserCtx, browserCancel
 	c.renders = 1
-	return c.allocCtx
+	return c.browserCtx, nil
 }
 
-func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// teardownLocked cancels the current browser and its allocator, if any,
+// and clears the fields so the next ensureBrowserLocked call starts
+// fresh. Callers must hold c.mu.
+func (c *Client) teardownLocked() {
+	if c.browserCancel != nil {
+		c.browserCancel()
+		c.browserCancel = nil
+		c.browserCtx = nil
+	}
 	if c.allocCancel != nil {
 		c.allocCancel()
 		c.allocCancel = nil
 		c.allocCtx = nil
 	}
+}
+
+// renderScreenshot renders one game's recap screenshot using the shared
+// browser. It holds c.mu for the entire render, not just for obtaining
+// the browser context.
+//
+// consumeLoop (the main Kafka loop) and retryLoop (a ticker-driven
+// goroutine that retries stuck messages) both call Fetch and genuinely
+// run concurrently. Releasing the lock before rendering — the original
+// plan — let a cap- or error-triggered recycle on one goroutine cancel
+// the browser context another goroutine was still mid-render with,
+// dropping that game to the fallback card for no reason. Games are
+// already processed one at a time within each loop, retryLoop only adds
+// an occasional second caller, and the Pi container's memory budget
+// doesn't comfortably fit two concurrent Chromium tabs (150-250 MB each)
+// anyway, so serializing renders trades a little latency under rare
+// contention for removing the race entirely.
+func (c *Client) renderScreenshot(
+	gameURL string,
+	overallTimeout, sleepAfter, assetsWait time.Duration,
+	viewportW, viewportH int,
+) ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	browserCtx, err := c.ensureBrowserLocked()
+	if err != nil {
+		return nil, err
+	}
+
+	pngBytes, err := screenshotRecapWrapper(browserCtx, gameURL, overallTimeout, sleepAfter, assetsWait, viewportW, viewportH)
+	if err != nil {
+		// The browser (or the tab it just ran) may be in a bad state.
+		// Invalidate it so the next call gets a fresh browser instead of
+		// every remaining game in the batch failing the same way until
+		// the render counter happens to roll over.
+		c.teardownLocked()
+		return nil, err
+	}
+	return pngBytes, nil
+}
+
+func (c *Client) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.teardownLocked()
 	log.Info().Msg("closing gochrome client")
 	return nil
 }
@@ -168,7 +243,7 @@ func (c *Client) Fetch(ctx context.Context, gameID string) (types.Result, error)
 	}
 
 	// 2) Headless Chrome screenshot
-	pngBytes, err := screenshotRecapWrapper(c.allocator(), gameURL, defaultTimeout,
+	pngBytes, err := c.renderScreenshot(gameURL, defaultTimeout,
 		defaultSleepAfter, defaultAssetsWait, defaultViewportW, defaultViewportH)
 	if err != nil {
 		log.Error().Err(err).Str("game_id", gameID).Msg("screenshot failed, fallback to metadata card")
@@ -436,17 +511,23 @@ func fetchRecapJSON(apiURL, userAgent string, to time.Duration) (*RecapResponse,
 // Headless Chrome screenshot (wrapper-based)
 // -------------------------
 
+// screenshotRecapWrapper renders one game on a new tab of an already
+// warmed-up browser. browserCtx must be a context returned by
+// ensureBrowserLocked (i.e. one whose chromedp Context.Browser is already
+// allocated) — see the comment there for why that distinction matters.
 func screenshotRecapWrapper(
-	allocCtx context.Context,
+	browserCtx context.Context,
 	gameURL string,
 	overallTimeout time.Duration,
 	sleepAfter time.Duration,
 	assetsWait time.Duration,
 	viewportW, viewportH int,
 ) ([]byte, error) {
-	ctx, cancelTimeout := context.WithTimeout(allocCtx, overallTimeout)
+	ctx, cancelTimeout := context.WithTimeout(browserCtx, overallTimeout)
 	defer cancelTimeout()
 
+	// New tab on the existing browser, not a new process: browserCtx
+	// already carries an allocated Browser, so this Run attaches to it.
 	ctx, cancelTab := chromedp.NewContext(ctx)
 	defer cancelTab()
 
