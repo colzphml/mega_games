@@ -67,9 +67,6 @@ func TestObjectKey(t *testing.T) {
 // both the key it was stored under and the bytes MinIO actually
 // persisted.
 func TestUploadAndObjectKey(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping container-backed test in -short mode")
-	}
 	endpoint, access, secret := startMinio(t)
 
 	cfg := config.Config{
@@ -116,6 +113,10 @@ func TestUploadAndObjectKey(t *testing.T) {
 
 func startMinio(t *testing.T) (endpoint, accessKey, secretKey string) {
 	t.Helper()
+
+	if testing.Short() {
+		t.Skip("skipping container-backed test in -short mode")
+	}
 
 	ctx := context.Background()
 	container, err := tcminio.Run(ctx, "minio/minio:RELEASE.2024-09-13T20-26-02Z")

@@ -39,17 +39,16 @@ func NewRedpanda(t *testing.T) []string {
 	if err != nil {
 		t.Fatalf("start redpanda: %v", err)
 	}
-
-	addr, err := container.KafkaSeedBroker(ctx)
-	if err != nil {
-		t.Fatalf("seed broker: %v", err)
-	}
-
 	t.Cleanup(func() {
 		if err := testcontainers.TerminateContainer(container); err != nil {
 			t.Logf("terminate redpanda: %v", err)
 		}
 	})
+
+	addr, err := container.KafkaSeedBroker(ctx)
+	if err != nil {
+		t.Fatalf("seed broker: %v", err)
+	}
 
 	return []string{addr}
 }
