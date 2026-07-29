@@ -212,23 +212,19 @@ func parseJSONIntString(s string) (int, error) {
 
 func buildRecapImage(ctx context.Context, baseURL string, httpTimeout time.Duration, recData Recap) (image.Image, error) {
 	baseURL = strings.TrimRight(baseURL, "/")
-	// Загружаем фон стадиона и логотипы
+
+	// Фон стадиона — это холст: без него рисовать не на чем, он остаётся обязательным.
 	bg, err := loadImage(ctx, baseURL+"/images/stadiums/"+strconv.Itoa(recData.Game.HomeTeam.LogoID)+".png", httpTimeout)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load stadium background: %w", err)
 	}
-	logoHome, err := loadLogo(ctx, baseURL, recData.Game.HomeTeam, httpTimeout)
-	if err != nil {
-		return nil, err
-	}
-	logoAway, err := loadLogo(ctx, baseURL, recData.Game.AwayTeam, httpTimeout)
-	if err != nil {
-		return nil, err
-	}
-	footerLogo, err := loadImage(ctx, baseURL+"/logo.png", httpTimeout)
-	if err != nil {
-		return nil, err
-	}
+
+	// Логотипы — украшение: счёт и статистика важнее, недоступный логотип
+	// не должен ронять генерацию целиком (headless — запасной путь и должен
+	// переживать те же 404, что валят основной рендерер).
+	logoHome := optionalLogo(ctx, baseURL, recData.Game.HomeTeam, httpTimeout)
+	logoAway := optionalLogo(ctx, baseURL, recData.Game.AwayTeam, httpTimeout)
+	footerLogo := optionalImage(ctx, baseURL+"/logo.png", httpTimeout)
 
 	// Настройка холста
 	const width, height = 2048, 1152
@@ -308,16 +304,30 @@ func loadImage(ctx context.Context, url string, timeout time.Duration) (image.Im
 	return img, nil
 }
 
-// loadLogo выбирает адрес логотипа (пользовательский или из каталога) и загружает его
-func loadLogo(ctx context.Context, baseURL string, t Team, timeout time.Duration) (image.Image, error) {
+// optionalImage fetches a decorative asset (a team logo or the footer
+// logo). A missing one should degrade the card, not sink it: the
+// scoreline is the point, the logo is decoration.
+func optionalImage(ctx context.Context, url string, timeout time.Duration) image.Image {
+	img, err := loadImage(ctx, url, timeout)
+	if err != nil {
+		log.Warn().Err(err).Str("url", url).Msg("optional asset unavailable, drawing without it")
+		return nil
+	}
+	return img
+}
+
+// optionalLogo выбирает адрес логотипа (пользовательский или из каталога) и
+// загружает его как необязательный ассет: недоступный логотип не должен
+// ронять генерацию карточки.
+func optionalLogo(ctx context.Context, baseURL string, t Team, timeout time.Duration) image.Image {
 	if t.Logo != nil && *t.Logo != "" {
 		logoURL := *t.Logo
 		if !strings.HasPrefix(logoURL, "http://") && !strings.HasPrefix(logoURL, "https://") {
 			logoURL = strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(logoURL, "/")
 		}
-		return loadImage(ctx, logoURL, timeout)
+		return optionalImage(ctx, logoURL, timeout)
 	}
-	return loadImage(ctx, strings.TrimRight(baseURL, "/")+"/images/teamlogos/256/"+strconv.Itoa(t.LogoID)+".png", timeout)
+	return optionalImage(ctx, strings.TrimRight(baseURL, "/")+"/images/teamlogos/256/"+strconv.Itoa(t.LogoID)+".png", timeout)
 }
 
 // drawSideGradient затемняет края изображения
@@ -396,8 +406,10 @@ func drawTeamRow(dc *gg.Context, t Team, score int, x, y, w, h float64, logo ima
 	dc.SetColor(col)
 	dc.DrawRectangle(x, y, colLogoW, h)
 	dc.Fill()
-	// логотип
-	dc.DrawImageAnchored(logo, int(x+colLogoW/2), int(y+h/2), 0.5, 0.5)
+	// логотип (может отсутствовать — необязательный ассет)
+	if logo != nil {
+		dc.DrawImageAnchored(logo, int(x+colLogoW/2), int(y+h/2), 0.5, 0.5)
+	}
 
 	// 2. фон имени
 	dc.SetColor(col)
