@@ -12,9 +12,8 @@ import (
 	kafkago "github.com/segmentio/kafka-go"
 
 	"github.com/colzphml/mega_games/discord_kafka_telegram_game_sender/internal/config"
-	"github.com/colzphml/mega_games/discord_kafka_telegram_game_sender/internal/storage"
 	"github.com/colzphml/mega_games/discord_kafka_telegram_game_sender/internal/store"
-	"github.com/colzphml/mega_games/discord_kafka_telegram_game_sender/internal/telegram"
+	"github.com/colzphml/mega_games/internal/common/ports"
 )
 
 type GameImageEvent struct {
@@ -30,12 +29,12 @@ type Processor struct {
 	cfg     config.Config
 	store   *store.Store
 	reader  *kafkago.Reader
-	client  *telegram.Client
-	objects *storage.Client
+	client  ports.GameSender
+	objects ports.ObjectDownloader
 	log     zerolog.Logger
 }
 
-func New(cfg config.Config, storeClient *store.Store, reader *kafkago.Reader, client *telegram.Client, objects *storage.Client, log zerolog.Logger) *Processor {
+func New(cfg config.Config, storeClient *store.Store, reader *kafkago.Reader, client ports.GameSender, objects ports.ObjectDownloader, log zerolog.Logger) *Processor {
 	return &Processor{cfg: cfg, store: storeClient, reader: reader, client: client, objects: objects, log: log}
 }
 
@@ -192,7 +191,7 @@ func (p *Processor) handleMessage(ctx context.Context, msg store.GameMessage) er
 		caption = "game image"
 	}
 
-	if err := p.client.SendGameImage(caption, image); err != nil {
+	if err := p.client.SendGameImage(ctx, caption, image); err != nil {
 		return err
 	}
 	return nil

@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -46,14 +47,18 @@ func New(token, chatID string, log zerolog.Logger) (*Client, error) {
 	return &Client{bot: bot, chatID: parsedID, log: log}, nil
 }
 
-func (c *Client) SendWeekMessage(text string) error {
+func (c *Client) SendWeekMessage(ctx context.Context, text string) error {
 	msg := tgbotapi.NewMessage(c.chatID, text)
 	msg.DisableWebPagePreview = true
 	msg.ParseMode = "MarkdownV2"
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, err := c.bot.Send(msg); err != nil {
 		return fmt.Errorf("send telegram message: %s", redactToken(err.Error(), c.bot.Token))
 	}
-	c.log.Info().Str("message", text).Msg("week message sent")
+	c.log.Info().Msg("week message sent")
 	return nil
 }
 

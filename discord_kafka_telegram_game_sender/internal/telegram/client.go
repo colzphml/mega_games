@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -47,7 +48,7 @@ func New(token, chatID string, log zerolog.Logger) (*Client, error) {
 	return &Client{bot: bot, chatID: parsedID, log: log}, nil
 }
 
-func (c *Client) SendGameImage(caption string, image []byte) error {
+func (c *Client) SendGameImage(ctx context.Context, caption string, image []byte) error {
 	reader := bytes.NewReader(image)
 	photo := tgbotapi.NewPhotoUpload(c.chatID, tgbotapi.FileReader{
 		Name:   "game-recap.png",
@@ -55,6 +56,10 @@ func (c *Client) SendGameImage(caption string, image []byte) error {
 		Size:   int64(len(image)),
 	})
 	photo.Caption = caption
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, err := c.bot.Send(photo); err != nil {
 		return fmt.Errorf("send telegram photo: %s", redactToken(err.Error(), c.bot.Token))
 	}

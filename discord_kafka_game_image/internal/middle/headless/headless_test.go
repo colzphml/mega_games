@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestParseColorNormal(t *testing.T) {
@@ -48,10 +47,9 @@ func TestParseColorGarbage(t *testing.T) {
 	}
 }
 
-// buildRecapImage does not (yet) accept an injected HTTP client — loadImage
-// dials out with its own http.Client internally. These tests therefore
-// exercise the real behaviour through a httptest.Server URL passed as
-// baseURL, rather than swapping in srv.Client().
+// buildRecapImage takes an injected HTTP doer, so these tests pass
+// srv.Client() explicitly instead of relying on a client constructed
+// inside loadImage.
 func TestBuildRecapImageSurvivesMissingLogo(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Логотипы недоступны, фон отдаётся.
@@ -68,7 +66,7 @@ func TestBuildRecapImageSurvivesMissingLogo(t *testing.T) {
 	rec.Game.HomeTeam = Team{DisplayName: "Falcons", PrimaryColor: "16711680"}
 	rec.Game.AwayTeam = Team{DisplayName: "Bucs", PrimaryColor: "255"}
 
-	img, err := buildRecapImage(context.Background(), srv.URL, 5*time.Second, rec)
+	img, err := buildRecapImage(context.Background(), srv.Client(), srv.URL, rec)
 	if err != nil {
 		t.Fatalf("a missing logo must not fail the whole image: %v", err)
 	}
@@ -84,7 +82,7 @@ func TestBuildRecapImageFailsWithoutBackground(t *testing.T) {
 	defer srv.Close()
 
 	rec := Recap{}
-	if _, err := buildRecapImage(context.Background(), srv.URL, 5*time.Second, rec); err == nil {
+	if _, err := buildRecapImage(context.Background(), srv.Client(), srv.URL, rec); err == nil {
 		t.Error("without a background there is nothing to draw on; this must fail")
 	}
 }

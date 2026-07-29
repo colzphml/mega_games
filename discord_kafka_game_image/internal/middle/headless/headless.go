@@ -25,6 +25,7 @@ import (
 
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/config"
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/types"
+	"github.com/colzphml/mega_games/internal/common/ports"
 )
 
 // log is the package-level logger configured for structured logging.
@@ -37,6 +38,7 @@ type Client struct {
 	baseURL     string
 	league      string
 	httpTimeout time.Duration
+	http        ports.HTTPDoer
 }
 
 // NewClient initializes a new headless client with the provided configuration.
@@ -45,6 +47,7 @@ func NewClient(ctx context.Context, cfg config.Config) (*Client, error) {
 		baseURL:     strings.TrimRight(cfg.BaseURL, "/"),
 		league:      strings.TrimSpace(cfg.League),
 		httpTimeout: cfg.FetchTimeout,
+		http:        &http.Client{Timeout: cfg.FetchTimeout},
 	}, nil
 }
 
@@ -63,11 +66,11 @@ func (c *Client) Fetch(ctx context.Context, gameID string) (types.Result, error)
 	if err != nil {
 		return types.Result{}, err
 	}
-	recData, err := fetchJSON(ctx, recapURL, c.httpTimeout)
+	recData, err := fetchJSON(ctx, c.http, recapURL)
 	if err != nil {
 		return types.Result{}, err
 	}
-	img, err := buildRecapImage(ctx, c.baseURL, c.httpTimeout, recData)
+	img, err := buildRecapImage(ctx, c.http, c.baseURL, recData)
 	if err != nil {
 		return types.Result{}, err
 	}
@@ -210,11 +213,11 @@ func parseJSONIntString(s string) (int, error) {
 	return strconv.Atoi(s)
 }
 
-func buildRecapImage(ctx context.Context, baseURL string, httpTimeout time.Duration, recData Recap) (image.Image, error) {
+func buildRecapImage(ctx context.Context, doer ports.HTTPDoer, baseURL string, recData Recap) (image.Image, error) {
 	baseURL = strings.TrimRight(baseURL, "/")
 
 	// Фон стадиона — это холст: без него рисовать не на чем, он остаётся обязательным.
-	bg, err := loadImage(ctx, baseURL+"/images/stadiums/"+strconv.Itoa(recData.Game.HomeTeam.LogoID)+".png", httpTimeout)
+	bg, err := loadImage(ctx, doer, baseURL+"/images/stadiums/"+strconv.Itoa(recData.Game.HomeTeam.LogoID)+".png")
 	if err != nil {
 		return nil, fmt.Errorf("load stadium background: %w", err)
 	}
@@ -222,9 +225,9 @@ func buildRecapImage(ctx context.Context, baseURL string, httpTimeout time.Durat
 	// Логотипы — украшение: счёт и статистика важнее, недоступный логотип
 	// не должен ронять генерацию целиком (headless — запасной путь и должен
 	// переживать те же 404, что валят основной рендерер).
-	logoHome := optionalLogo(ctx, baseURL, recData.Game.HomeTeam, httpTimeout)
-	logoAway := optionalLogo(ctx, baseURL, recData.Game.AwayTeam, httpTimeout)
-	footerLogo := optionalImage(ctx, baseURL+"/logo.png", httpTimeout)
+	logoHome := optionalLogo(ctx, doer, baseURL, recData.Game.HomeTeam)
+	logoAway := optionalLogo(ctx, doer, baseURL, recData.Game.AwayTeam)
+	footerLogo := optionalImage(ctx, doer, baseURL+"/logo.png")
 
 	// Настройка холста
 	const width, height = 2048, 1152
@@ -257,15 +260,14 @@ func buildRecapImage(ctx context.Context, baseURL string, httpTimeout time.Durat
 }
 
 // fetchJSON скачивает и распарсивает JSON
-func fetchJSON(ctx context.Context, url string, timeout time.Duration) (Recap, error) {
+func fetchJSON(ctx context.Context, doer ports.HTTPDoer, url string) (Recap, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return Recap{}, fmt.Errorf("fetch recap json: %w", err)
 	}
 	req.Header.Set("User-Agent", defaultUserAgent)
 	req.Header.Set("Accept", "application/json")
-	client := &http.Client{Timeout: timeout}
-	res, err := client.Do(req)
+	res, err := doer.Do(req)
 	if err != nil {
 		return Recap{}, fmt.Errorf("fetch recap json: %w", err)
 	}
@@ -281,15 +283,14 @@ func fetchJSON(ctx context.Context, url string, timeout time.Duration) (Recap, e
 }
 
 // loadImage скачивает изображение и декодирует его
-func loadImage(ctx context.Context, url string, timeout time.Duration) (image.Image, error) {
+func loadImage(ctx context.Context, doer ports.HTTPDoer, url string) (image.Image, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch image: %w", err)
 	}
 	req.Header.Set("User-Agent", defaultUserAgent)
 	req.Header.Set("Accept", "image/*,*/*;q=0.8")
-	client := &http.Client{Timeout: timeout}
-	res, err := client.Do(req)
+	res, err := doer.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch image: %w", err)
 	}
@@ -307,8 +308,8 @@ func loadImage(ctx context.Context, url string, timeout time.Duration) (image.Im
 // optionalImage fetches a decorative asset (a team logo or the footer
 // logo). A missing one should degrade the card, not sink it: the
 // scoreline is the point, the logo is decoration.
-func optionalImage(ctx context.Context, url string, timeout time.Duration) image.Image {
-	img, err := loadImage(ctx, url, timeout)
+func optionalImage(ctx context.Context, doer ports.HTTPDoer, url string) image.Image {
+	img, err := loadImage(ctx, doer, url)
 	if err != nil {
 		log.Warn().Err(err).Str("url", url).Msg("optional asset unavailable, drawing without it")
 		return nil
@@ -319,15 +320,15 @@ func optionalImage(ctx context.Context, url string, timeout time.Duration) image
 // optionalLogo выбирает адрес логотипа (пользовательский или из каталога) и
 // загружает его как необязательный ассет: недоступный логотип не должен
 // ронять генерацию карточки.
-func optionalLogo(ctx context.Context, baseURL string, t Team, timeout time.Duration) image.Image {
+func optionalLogo(ctx context.Context, doer ports.HTTPDoer, baseURL string, t Team) image.Image {
 	if t.Logo != nil && *t.Logo != "" {
 		logoURL := *t.Logo
 		if !strings.HasPrefix(logoURL, "http://") && !strings.HasPrefix(logoURL, "https://") {
 			logoURL = strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(logoURL, "/")
 		}
-		return optionalImage(ctx, logoURL, timeout)
+		return optionalImage(ctx, doer, logoURL)
 	}
-	return optionalImage(ctx, strings.TrimRight(baseURL, "/")+"/images/teamlogos/256/"+strconv.Itoa(t.LogoID)+".png", timeout)
+	return optionalImage(ctx, doer, strings.TrimRight(baseURL, "/")+"/images/teamlogos/256/"+strconv.Itoa(t.LogoID)+".png")
 }
 
 // drawSideGradient затемняет края изображения

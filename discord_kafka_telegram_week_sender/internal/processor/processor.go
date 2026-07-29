@@ -12,18 +12,18 @@ import (
 
 	"github.com/colzphml/mega_games/discord_kafka_telegram_week_sender/internal/config"
 	"github.com/colzphml/mega_games/discord_kafka_telegram_week_sender/internal/store"
-	"github.com/colzphml/mega_games/discord_kafka_telegram_week_sender/internal/telegram"
+	"github.com/colzphml/mega_games/internal/common/ports"
 )
 
 type Processor struct {
 	cfg    config.Config
 	store  *store.Store
 	reader *kafkago.Reader
-	client *telegram.Client
+	client ports.WeekSender
 	log    zerolog.Logger
 }
 
-func New(cfg config.Config, storeClient *store.Store, reader *kafkago.Reader, client *telegram.Client, log zerolog.Logger) *Processor {
+func New(cfg config.Config, storeClient *store.Store, reader *kafkago.Reader, client ports.WeekSender, log zerolog.Logger) *Processor {
 	return &Processor{cfg: cfg, store: storeClient, reader: reader, client: client, log: log}
 }
 
@@ -158,7 +158,7 @@ func (p *Processor) processMessage(ctx context.Context, msg store.WeekMessage, d
 }
 
 func (p *Processor) handleMessage(ctx context.Context, msg store.WeekMessage) error {
-	if err := p.client.SendWeekMessage(msg.Payload); err != nil {
+	if err := p.client.SendWeekMessage(ctx, msg.Payload); err != nil {
 		return err
 	}
 	return nil

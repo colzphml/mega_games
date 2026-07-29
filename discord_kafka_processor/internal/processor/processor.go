@@ -13,10 +13,10 @@ import (
 	kafkago "github.com/segmentio/kafka-go"
 
 	"github.com/colzphml/mega_games/discord_kafka_processor/internal/config"
-	"github.com/colzphml/mega_games/discord_kafka_processor/internal/discord"
 	"github.com/colzphml/mega_games/discord_kafka_processor/internal/kafka"
 	"github.com/colzphml/mega_games/discord_kafka_processor/internal/parser"
 	"github.com/colzphml/mega_games/discord_kafka_processor/internal/store"
+	"github.com/colzphml/mega_games/internal/common/ports"
 	"github.com/colzphml/mega_games/internal/common/retry"
 )
 
@@ -25,13 +25,13 @@ var errMessageNotReady = errors.New("discord message not ready")
 type Processor struct {
 	cfg      config.Config
 	store    *store.Store
-	discord  *discord.Client
+	discord  ports.DiscordMessages
 	producer *kafka.Producer
 	reader   *kafkago.Reader
 	log      zerolog.Logger
 }
 
-func New(cfg config.Config, store *store.Store, discordClient *discord.Client, producer *kafka.Producer, reader *kafkago.Reader, log zerolog.Logger) *Processor {
+func New(cfg config.Config, store *store.Store, discordClient ports.DiscordMessages, producer *kafka.Producer, reader *kafkago.Reader, log zerolog.Logger) *Processor {
 	return &Processor{
 		cfg:      cfg,
 		store:    store,
