@@ -22,7 +22,7 @@
 | V5-13 Мелкие фиксы и мёртвый код | ✅ | `v5/13-cleanup` | 777b077 |
 | V5-14 ListPending в pgstore | ✅ | `v5/14-pgstore-listpending` | 2ccf46e |
 | V5-15 Удаление MongoDB | ✅ | `v5/15-drop-mongo` | f884e11 |
-| V5-16 Оптимизация gochrome | ⬜ | `v5/16-chrome-reuse` | — |
+| V5-16 Оптимизация gochrome | ✅ | `v5/16-chrome-reuse` | 718dee3 |
 | V5-17 Окно дашборда | ⬜ | `v5/17-dashboard-window` | — |
 | V5-18 Интерфейсы | ⬜ | `v5/18-interfaces` | — |
 | V5-19 Тесты Telegram | ⬜ | `v5/19-telegram-tests` | — |
