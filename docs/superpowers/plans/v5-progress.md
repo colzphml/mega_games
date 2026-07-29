@@ -25,7 +25,7 @@
 | V5-16 Оптимизация gochrome | ✅ | `v5/16-chrome-reuse` | 718dee3 |
 | V5-17 Окно дашборда | ✅ | `v5/17-dashboard-window` | 23cda0c |
 | V5-18 Интерфейсы | ✅ | `v5/18-interfaces` | 924af6b |
-| V5-19 Тесты Telegram | ⬜ | `v5/19-telegram-tests` | — |
+| V5-19 Тесты Telegram | ✅ | `v5/19-telegram-tests` | 9d7ba9d |
 | V5-20 Тесты Discord | ⬜ | `v5/20-discord-tests` | — |
 | V5-21 Тесты NeonSportz | ⬜ | `v5/21-neonsportz-tests` | — |
 | V5-22 Тесты MinIO/Redpanda | ⬜ | `v5/22-storage-tests` | — |
