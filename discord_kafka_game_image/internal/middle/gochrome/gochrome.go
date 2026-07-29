@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chromedp/cdproto/emulation"
@@ -78,7 +79,18 @@ type Client struct {
 	league        string
 	headless      bool
 	screenshotDir string
+
+	mu          sync.Mutex
+	allocCtx    context.Context
+	allocCancel context.CancelFunc
+	renders     int
 }
+
+// maxRendersPerBrowser bounds how long one Chromium process lives.
+// A weekly batch is about twelve games, so in normal operation the
+// browser is never recycled mid-batch; the limit only guards against
+// leaks accumulating over unusually long runs.
+const maxRendersPerBrowser = 20
 
 func NewClient(ctx context.Context, cfg config.Config) (*Client, error) {
 	return &Client{
@@ -89,7 +101,43 @@ func NewClient(ctx context.Context, cfg config.Config) (*Client, error) {
 	}, nil
 }
 
+// allocator returns a shared browser allocator, starting or recycling
+// it as needed. Callers must not hold the lock while rendering.
+func (c *Client) allocator() context.Context {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.allocCtx != nil && c.renders < maxRendersPerBrowser {
+		c.renders++
+		return c.allocCtx
+	}
+
+	if c.allocCancel != nil {
+		c.allocCancel()
+	}
+
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("hide-scrollbars", true),
+		chromedp.Flag("mute-audio", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("headless", c.headless),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+	)
+	c.allocCtx, c.allocCancel = chromedp.NewExecAllocator(context.Background(), opts...)
+	c.renders = 1
+	return c.allocCtx
+}
+
 func (c *Client) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.allocCancel != nil {
+		c.allocCancel()
+		c.allocCancel = nil
+		c.allocCtx = nil
+	}
 	log.Info().Msg("closing gochrome client")
 	return nil
 }
@@ -120,7 +168,8 @@ func (c *Client) Fetch(ctx context.Context, gameID string) (types.Result, error)
 	}
 
 	// 2) Headless Chrome screenshot
-	pngBytes, err := screenshotRecapWrapper(ctx, gameURL, defaultTimeout, c.headless, defaultSleepAfter, defaultAssetsWait, defaultViewportW, defaultViewportH)
+	pngBytes, err := screenshotRecapWrapper(c.allocator(), gameURL, defaultTimeout,
+		defaultSleepAfter, defaultAssetsWait, defaultViewportW, defaultViewportH)
 	if err != nil {
 		log.Error().Err(err).Str("game_id", gameID).Msg("screenshot failed, fallback to metadata card")
 		return buildFallbackResult(metaURL, gameURL, league, gameID)
@@ -271,12 +320,21 @@ func teamLabel(t TeamMeta) string {
 	return "TEAM"
 }
 
+var (
+	fontOnce   sync.Once
+	parsedFont *truetype.Font
+)
+
+// scoreFont reuses the parsed TTF instead of parsing goregular.TTF on
+// every call (see loadFont in the headless package for the same fix).
 func scoreFont(size float64) font.Face {
-	tt, err := truetype.Parse(goregular.TTF)
-	if err != nil {
+	fontOnce.Do(func() {
+		parsedFont, _ = truetype.Parse(goregular.TTF)
+	})
+	if parsedFont == nil {
 		return basicfont.Face7x13
 	}
-	return truetype.NewFace(tt, &truetype.Options{
+	return truetype.NewFace(parsedFont, &truetype.Options{
 		Size: size,
 		DPI:  72,
 	})
@@ -379,36 +437,18 @@ func fetchRecapJSON(apiURL, userAgent string, to time.Duration) (*RecapResponse,
 // -------------------------
 
 func screenshotRecapWrapper(
-	parentCtx context.Context,
+	allocCtx context.Context,
 	gameURL string,
 	overallTimeout time.Duration,
-	headless bool,
 	sleepAfter time.Duration,
 	assetsWait time.Duration,
 	viewportW, viewportH int,
 ) ([]byte, error) {
-	if parentCtx == nil {
-		parentCtx = context.Background()
-	}
+	ctx, cancelTimeout := context.WithTimeout(allocCtx, overallTimeout)
+	defer cancelTimeout()
 
-	allocOpts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("hide-scrollbars", true),
-		chromedp.Flag("mute-audio", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("headless", headless),
-		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-	)
-
-	allocCtx, cancel := chromedp.NewExecAllocator(parentCtx, allocOpts...)
-	defer cancel()
-
-	ctx, cancel2 := context.WithTimeout(allocCtx, overallTimeout)
-	defer cancel2()
-
-	ctx, cancel3 := chromedp.NewContext(ctx)
-	defer cancel3()
+	ctx, cancelTab := chromedp.NewContext(ctx)
+	defer cancelTab()
 
 	var (
 		pngBytes []byte

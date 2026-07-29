@@ -13,12 +13,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
 	"github.com/rs/zerolog"
 	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/font/gofont/goregular"
 
 	"github.com/colzphml/mega_games/discord_kafka_game_image/internal/config"
@@ -606,10 +608,22 @@ func parseColor(dec string) color.RGBA {
 	}
 }
 
-// загрузка шрифта Roboto
+var (
+	fontOnce   sync.Once
+	parsedFont *truetype.Font
+)
+
+// loadFont reuses the parsed TTF. Parsing goregular.TTF on every call
+// meant about fifteen parses per generated image, which is not free on
+// an ARM board.
 func loadFont(size float64) font.Face {
-	fnt, _ := truetype.Parse(goregular.TTF)
-	return truetype.NewFace(fnt, &truetype.Options{
+	fontOnce.Do(func() {
+		parsedFont, _ = truetype.Parse(goregular.TTF)
+	})
+	if parsedFont == nil {
+		return basicfont.Face7x13
+	}
+	return truetype.NewFace(parsedFont, &truetype.Options{
 		Size:    size,
 		DPI:     72,
 		Hinting: font.HintingFull,
