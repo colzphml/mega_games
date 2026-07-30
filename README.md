@@ -244,13 +244,10 @@ Healthcheck сервиса вручную:
 docker compose exec <service> wget -qO- http://127.0.0.1:8080/health
 ```
 
-Kafka consumer (чтение топика):
+Redpanda consumer (чтение топика):
 
 ```bash
-docker compose exec kafka kafka-console-consumer \
-  --bootstrap-server kafka:9092 \
-  --topic <topic> \
-  --from-beginning
+docker compose exec redpanda rpk topic consume <topic> --brokers redpanda:9092
 ```
 
 Статус всех контейнеров:

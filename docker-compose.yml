@@ -1,69 +1,40 @@
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.1
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.18
     restart: unless-stopped
-    entrypoint:
-      - /bin/bash
-      - -ec
-      - |
-        cat >/tmp/zookeeper.properties <<'EOF'
-        dataDir=/var/lib/zookeeper/data
-        dataLogDir=/var/lib/zookeeper/log
-        clientPort=2181
-        tickTime=2000
-        initLimit=10
-        syncLimit=5
-        EOF
-        exec zookeeper-server-start /tmp/zookeeper.properties
-    healthcheck:
-      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/2181"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 20s
-    labels:
-      - autoheal=true
-    volumes:
-      - zookeeper-data:/var/lib/zookeeper/data
-      - zookeeper-log:/var/lib/zookeeper/log
-    networks:
-      - megagames-net
-
-  kafka:
-    image: confluentinc/cp-kafka:7.6.1
-    restart: unless-stopped
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    ports:
-      - "9092:9092"
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+      # A Raspberry Pi is not a dedicated broker host: without these
+      # flags Redpanda reserves memory and pins cores as if it were.
+      - --overprovisioned
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --default-log-level=warn
     environment:
       TZ: ${TZ}
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    mem_limit: 700m
     healthcheck:
-      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/9092"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 30s
+      timeout: 10s
       retries: 6
-      start_period: 20s
+      start_period: 30s
     labels:
       - autoheal=true
     volumes:
-      - kafka-data:/var/lib/kafka/data
+      - redpanda-data:/var/lib/redpanda/data
     networks:
       - megagames-net
 
   kafka-init:
-    image: confluentinc/cp-kafka:7.6.1
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.18
     restart: on-failure
     depends_on:
-      kafka:
+      redpanda:
         condition: service_healthy
     environment:
       TZ: ${TZ}
@@ -73,22 +44,19 @@ services:
       - /bin/bash
       - -c
       - |
-        for i in $(seq 1 30); do
-          ok=1
-          for topic in "$$KAFKA_INPUT_TOPIC" "$$KAFKA_WEEK_TOPIC" "$$KAFKA_GAME_TOPIC" "$$KAFKA_TELEGRAM_WEEK_TOPIC" "$$KAFKA_GAME_IMAGE_TOPIC"; do
-            if [ -z "$$topic" ]; then
-              ok=0
-              continue
-            fi
-            kafka-topics --bootstrap-server "$$KAFKA_BROKERS" --create --if-not-exists --topic "$$topic" --partitions "$$KAFKA_PARTITIONS" --replication-factor "$$KAFKA_REPLICATION_FACTOR" || ok=0
-          done
-          if [ "$${ok:-0}" -eq 1 ]; then
-            exit 0
+        set -eu
+        for topic in "$$KAFKA_INPUT_TOPIC" "$$KAFKA_WEEK_TOPIC" "$$KAFKA_GAME_TOPIC" "$$KAFKA_TELEGRAM_WEEK_TOPIC" "$$KAFKA_GAME_IMAGE_TOPIC"; do
+          if [ -z "$$topic" ]; then
+            echo "empty topic name in configuration" >&2
+            exit 1
           fi
-          echo "waiting for kafka..."
-          sleep 2
+          rpk topic create "$$topic" \
+            --brokers "$$KAFKA_BROKERS" \
+            --partitions "$$KAFKA_PARTITIONS" \
+            --replicas "$$KAFKA_REPLICATION_FACTOR" \
+            || rpk topic describe "$$topic" --brokers "$$KAFKA_BROKERS" >/dev/null
         done
-        exit 1
+        echo "topics ready"
     networks:
       - megagames-net
 
@@ -430,6 +398,7 @@ services:
       - megagames-net
 
 volumes:
+  redpanda-data:
   kafka-data:
   zookeeper-data:
   zookeeper-log:
