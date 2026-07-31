@@ -41,13 +41,9 @@ cd ../mega_games-V5-07
 | Собирать релизные образы на Raspberry Pi | Публикация образов — только через GitHub Actions в GHCR |
 | Трогать живой хост вне задачи выкатки (V5-30) | Остальные задачи — код и документация, риск для прод-хоста не нужен |
 
-**Сгенерировано:** 2026-01-24
-**Коммит:** bfa3c17
-**Ветка:** release-4.0
-
 ## ОБЗОР
 
-Go-микросервисы: Discord -> Kafka -> Обработка -> Telegram. Событийная архитектура с polyglot persistence (Postgres, MongoDB, MinIO).
+Go-микросервисы: Discord -> Kafka -> Обработка -> Telegram. Событийная архитектура: брокер — Redpanda (Kafka API-совместим, топики и env всё ещё называются `KAFKA_*`), хранение — Postgres (статусы) + MinIO (файлы картинок). MongoDB убрана в v5.0 — была полным дублем `game_image_status` в Postgres.
 
 ## СТРУКТУРА
 
@@ -56,29 +52,34 @@ mega_games/
 ├── discord_kafka_listener/       # Discord -> Kafka (ID сообщений)
 ├── discord_kafka_processor/      # Парсинг недель/игр из Discord
 ├── discord_kafka_week_formatter/ # Форматирование текста недели для Telegram
-├── discord_kafka_game_image/     # Генерация картинок игр (gochrome/selenium/headless)
+├── discord_kafka_game_image/     # Генерация картинок игр (gochrome/headless)
 ├── discord_kafka_telegram_week_sender/   # Отправка текста недели в Telegram
 ├── discord_kafka_telegram_game_sender/   # Отправка картинок в Telegram
-├── discord_tools/                # Утилиты: message-dump, csv-to-sql
-├── monitoring/                   # Grafana + Loki + Promtail конфиги
-├── scripts/                      # install.sh для установки через curl
-├── docker-compose.yml            # Оркестрация всего стека
-└── go.mod                        # Корневой модуль (Go 1.24)
+├── cmd/admin_panel/              # Admin-panel: веб-интерфейс и статусы (:8081 внутри контейнера)
+├── internal/common/               # Общее для всех 6 сервисов: config, health, retry, queue, tgmarkdown, ports, harness'ы pgtest/brokertest
+├── internal/admin/                # Пакет admin-panel: auth (Basic Auth), store, handlers
+├── discord_tools/                 # Утилиты: message-dump, csv-to-sql (свой go.mod, не часть корневого модуля)
+├── monitoring/                    # Grafana + Loki + Promtail конфиги
+├── scripts/                       # release.sh/deploy.sh/publish.sh/install.sh, host-setup.sh — тюнинг хоста
+├── docker-compose.yml             # Оркестрация всего стека
+└── go.mod                         # Корневой модуль (Go 1.25.5)
 ```
 
-Каждый сервис: `cmd/<name>/main.go` + пакеты в `internal/`.
+Каждый из шести `discord_kafka_*`-сервисов и `admin_panel`: `cmd/<name>/main.go` +
+пакеты в собственном `internal/`. Плюс общий `internal/common/` в корне —
+используют все шесть kafka-сервисов (не admin-panel, у него свой `internal/admin/`).
 
 ## ГДЕ ИСКАТЬ
 
 | Задача | Расположение | Примечания |
 |--------|--------------|------------|
-| Добавить Kafka topic | `docker-compose.yml` (kafka-init) + конфиги сервисов | Добавить в цикл entrypoint |
+| Добавить топик | `docker-compose.yml` (kafka-init) + конфиги сервисов | `rpk topic create` в цикле entrypoint, брокер — Redpanda |
 | Изменить парсинг сообщений | `discord_kafka_processor/internal/parser/` | Regex-based |
-| Сменить image fetcher | `discord_kafka_game_image/internal/middle/` | `gochrome/`, `selenium/`, `headless/` |
-| Добавить таблицу Postgres | `internal/store/store.go` сервиса | Автомиграция через `EnsureSchema()` |
+| Сменить image fetcher | `discord_kafka_game_image/internal/middle/` | `gochrome/`, `headless/` (`selenium/` удалён в v5.0 вместе с профилем compose) |
+| Добавить таблицу Postgres | `internal/store/store.go` сервиса (у `game_image` — `internal/pgstore/store.go`) | Автомиграция через `EnsureSchema()` |
 | Формат сообщений Telegram | `*_telegram_*_sender/internal/telegram/client.go` | |
-| Переменные окружения | `.env.example` | Вся конфигурация через env |
-| Health сервиса | Каждый `main.go` имеет `/health` | Проверяет все зависимости |
+| Переменные окружения | `.env.example` | Вся конфигурация через env, ручной парсинг без сторонних библиотек |
+| Health сервиса | Каждый `main.go` имеет `/health` | 6 kafka-сервисов — через общий `internal/common/health` (`health.WaitFor` блокирует до готовности зависимости); `admin-panel` — свой хендлер, единственный роут вне Basic Auth |
 
 ## ПОТОК ДАННЫХ
 
@@ -108,34 +109,45 @@ telegram_week_sender           telegram_game_sender
 
 | Хранилище | Назначение | Используется |
 |-----------|------------|--------------|
-| Postgres | Статусы обработки, данные расписания | Все сервисы |
-| MongoDB | Метаданные изображений, коллекция game_images | Только game_image |
+| Postgres | Статусы обработки, данные расписания, статусы и метаданные game-image (таблица `game_image_status`, включая `image_url`) | Все сервисы |
 | MinIO | Файлы изображений (S3-совместимый) | game_image, telegram_game_sender |
-| Kafka | Событийный обмен между сервисами | Все сервисы |
+| Redpanda | Событийный обмен между сервисами, Kafka API-совместим (env и топики всё ещё `KAFKA_*`) | Все сервисы |
+
+MongoDB убрана в v5.0 (задача V5-15): `game_image_status` в Postgres уже содержал
+всё то же самое (сверено 600/600 записей перед удалением), отдельное хранилище
+было полным дублем.
 
 ## СОГЛАШЕНИЯ
 
 ### Стиль кода
 - Логирование: `github.com/rs/zerolog` — структурированный JSON
-- Конфигурация: `internal/config/config.go` — env через `github.com/caarlos0/env`
+- Конфигурация: `internal/config/config.go` каждого сервиса — ручной парсинг env
+  (`requiredEnv`/`optionalEnv` и аналоги), без сторонних библиотек. В
+  `internal/common/config` есть готовые аналоги (`Required`/`Optional`/...),
+  но пока ни один сервис на них не переведён
 - Нет явного линтера — использовать `go fmt`, `go vet`
 
 ### Паттерн сервисов
-- Каждый сервис: healthcheck на `:8080/health`
+- 6 kafka-сервисов: healthcheck на `:8080/health`; `admin-panel` — на `:8081/health`
 - Graceful shutdown через `signal.NotifyContext`
 - Retry с exponential backoff для внешних зависимостей
-- Функции `waitFor*` блокируют до готовности зависимости
+- `internal/common/health.WaitFor(...)` блокирует запуск до готовности зависимости
+  (Postgres, MinIO) — общая замена прежним отдельным `waitForPostgres`/`waitForMongo`/`waitForMinio`
 
 ### База данных
 - **Идемпотентность обязательна**: все INSERT используют `ON CONFLICT DO NOTHING`
 - Схема автомигрируется через `EnsureSchema()` при старте
-- Статусы: `new` -> `processed` | `failed`
+- Статусы: `new` -> `processed`; у `game_image` и `telegram_game_sender` есть
+  промежуточный `in_progress` для долгих операций (рендер картинки, загрузка в Telegram)
+- Retry-порог должен быть кратен интервалу тикера, не равен ему (`internal/common/queue.StaleThreshold`,
+  используют `telegram_week_sender`, `telegram_game_sender`, `game_image`) — см. антипаттерны
 
 ### Docker
 - Multi-stage сборка: `golang:1.25.5-alpine` -> `alpine:3.21`
 - Версия через `-ldflags` из `git describe --tags --always`
 - Non-root пользователь (`app`) в финальном образе
-- Все сервисы с лейблом `autoheal=true`
+- Почти все сервисы — лейбл `autoheal=true` (нужен healthcheck; нет его у
+  `minio` и у одноразового `kafka-init`)
 
 ## АНТИПАТТЕРНЫ (ЭТОТ ПРОЕКТ)
 
@@ -146,6 +158,8 @@ telegram_week_sender           telegram_game_sender
 | Хардкод версий | Использовать git теги через build args |
 | Пустые healthcheck'и | Проверять ВСЕ downstream зависимости |
 | Принимать cookie-диалоги | Скрывать через CSS `!important`, не кликать |
+| Дефолтный `TAG` в скриптах или compose | Откатывает прод на старую версию молча — уже был реальный инцидент (`AUDIT.md`, P0-1) |
+| Одинаковый порог eligibility и интервал тикера | Сообщение, обработка которого заняла ровно один тик, забирается повторно — дублирует посты в Telegram (`internal/common/queue.StaleThreshold`) |
 
 ## РЕЖИМЫ IMAGE FETCHER
 
@@ -153,9 +167,10 @@ telegram_week_sender           telegram_game_sender
 
 | Режим | Механизм | Когда использовать |
 |-------|----------|-------------------|
-| `headless` | API-генерация, без браузера | Быстро, простые картинки |
-| `gochrome` | chromedp скриншот | По умолчанию, полный рендер страницы |
-| `selenium` | Remote Selenium WebDriver | Требует `COMPOSE_PROFILES=selenium` |
+| `gochrome` | chromedp: полный рендер страницы + скриншот | Используется в проде — качество важнее ресурсов, осознанный выбор при планировании v5.0 |
+| `headless` | Нативная отрисовка через `fogleman/gg` по данным API, без браузера | Дефолт в коде, когда `GAME_IMAGE_FETCHER_TYPE` не задан, но в проде не используется; запасной вариант — быстрее и легче gochrome |
+
+`selenium` удалён в v5.0 вместе с профилем compose `selenium`: код был мёртвым — профиль ни разу не включался в проде.
 
 **Критично для gochrome**: Фоновые изображения должны быть предзагружены через JS `Image.onload` перед скриншотом.
 
@@ -165,18 +180,17 @@ telegram_week_sender           telegram_game_sender
 # Запуск всех сервисов
 docker compose up -d
 
-# С Selenium
-COMPOSE_PROFILES=selenium docker compose up -d
+# С мониторингом (Grafana + Loki + Promtail, по умолчанию выключен)
+COMPOSE_PROFILES=monitoring docker compose up -d
 
 # Логи сервиса
 docker compose logs -f <service>
 
-# Проверка health
+# Проверка health (порт 8080; у admin-panel — 8081)
 docker compose exec <service> wget -qO- http://127.0.0.1:8080/health
 
-# Чтение Kafka топика
-docker compose exec kafka kafka-console-consumer \
-  --bootstrap-server kafka:9092 --topic <topic> --from-beginning
+# Чтение топика (брокер — Redpanda, топики и переменные всё ещё называются KAFKA_*)
+docker compose exec redpanda rpk topic consume <topic> --brokers redpanda:9092
 
 # Загрузка данных расписания
 docker compose exec postgres psql -U megagames -d megagames < discord_tools/sql/schema.sql
@@ -185,14 +199,14 @@ docker compose exec postgres psql -U megagames -d megagames < discord_tools/sql/
 ## РЕЛИЗЫ
 
 ```bash
-TAG=4.0.0 ./scripts/release.sh
+TAG=5.0.0 ./scripts/release.sh
 
 # Или вручную
-git tag -a v4.0.0 -m "Release v4.0.0"
-git push origin v4.0.0
+git tag -a v5.0.0 -m "Release v5.0.0"
+git push origin v5.0.0
 
 # Или через GitHub CLI
-gh release create v4.0.0 --title "4.0.0" --notes "..."
+gh release create v5.0.0 --title "5.0.0" --notes "..."
 ```
 
 Предпочтительный путь релиза:
@@ -221,7 +235,7 @@ gh release create v4.0.0 --title "4.0.0" --notes "..."
 - `docker-compose.yml` должен ссылаться на `${IMAGE_REGISTRY}/${IMAGE_NAMESPACE}/...:${TAG}`
 - `.env` должен задавать `IMAGE_REGISTRY=ghcr.io`
 - `.env` должен задавать `IMAGE_NAMESPACE=colzphml/mega_games`
-- для штатного релиза `TAG` должен быть semver, например `4.3.2`
+- для штатного релиза `TAG` должен быть semver, например `5.0.0`
 - временно допустим branch tag `release-ghcr-multiarch-actions`, если релизный git tag ещё не опубликован
 
 Штатный порядок деплоя:
@@ -232,7 +246,7 @@ ssh pi '
   cd /home/colz/envs/mega_games
   export IMAGE_REGISTRY=ghcr.io
   export IMAGE_NAMESPACE=colzphml/mega_games
-  export TAG=4.3.2
+  export TAG=5.0.0
   docker compose pull
   docker compose up -d --force-recreate --remove-orphans --no-build
   docker compose ps
@@ -253,7 +267,14 @@ Guardrails для live-хоста:
 
 ## ЗАМЕТКИ
 
-- **Нет unit-тестов**: Проект использует healthcheck'и + статусные таблицы для валидации
+- **Тесты**: пирамида из двух слоёв. Unit-тесты без внешних зависимостей
+  (парсер Discord-сообщений, форматтер недели, классификация ошибок Discord,
+  markdown-экранирование, eligibility-пороги, Basic Auth админки и др.) и
+  интеграционные на testcontainers — Postgres через `internal/common/pgtest`,
+  Redpanda через `internal/common/brokertest`, плюс MinIO. Интеграционные
+  пропускают себя в `-short`-режиме через `testing.Short()`. Быстрый прогон
+  без Docker: `go test ./... -short`. Полный прогон (нужен запущенный Docker):
+  `go test ./...`
 - **Timezone**: Все сервисы учитывают `TZ` env, по умолчанию `Europe/Moscow`
 - **Autoheal**: Контейнеры автоперезапускаются при unhealthy статусе
 - **Backfill**: Listener может добрать пропущенные сообщения при реконнекте через `DISCORD_BACKFILL_*`

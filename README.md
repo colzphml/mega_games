@@ -12,17 +12,25 @@ Go-микросервисы для цепочки Discord -> Kafka -> обраб
 - `discord-kafka-game-image` — генерирует/забирает recap-картинки, кладет в MinIO.
 - `discord-kafka-telegram-week-sender` — отправляет week-текст в Telegram.
 - `discord-kafka-telegram-game-sender` — отправляет game-картинки в Telegram.
-- `admin-panel` — статусы и админ-интерфейс (`:8002`).
+- `admin-panel` — статусы и админ-интерфейс (`:8002`). Закрыт HTTP Basic Auth
+  через `ADMIN_USER`/`ADMIN_PASSWORD` (см. `.env.example`); пустой `ADMIN_PASSWORD`
+  (значение по умолчанию) отключает проверку — годится только для локальной
+  разработки, для хоста, доступного не только с localhost, пароль обязателен.
 - `autoheal` — перезапуск unhealthy контейнеров.
 
 ### Инфраструктура
 
-- `zookeeper` — координация Kafka.
-- `kafka` — брокер сообщений (`:9092`).
-- `kafka-init` — служебный контейнер, создаёт Kafka топики при старте.
-- `postgres` — статусы обработки (`:5432`).
-- `mongo` — метаданные game image (`:27017`).
-- `minio` — файлы картинок, S3-совместимое хранилище (`:9000`, консоль `:9001`).
+- `redpanda` — брокер сообщений, Kafka API-совместим (порт `9092` только
+  внутри `megagames-net`, наружу не публикуется).
+- `kafka-init` — служебный контейнер, создаёт топики через `rpk` при старте.
+- `postgres` — статусы обработки (порт `5432` только внутри `megagames-net`).
+- `minio` — файлы картинок, S3-совместимое хранилище (`:9000`; консоль на
+  `9001` наружу не публикуется).
+
+Без профиля `monitoring` наружу (на хост) публикуются только `8002` (admin-panel)
+и `9000` (MinIO API). Всё остальное доступно лишь внутри docker-сети
+`megagames-net`. С профилем `monitoring` добавляется ещё `3000` (Grafana) —
+см. ниже.
 
 ### Опциональный профиль `monitoring`
 
@@ -35,14 +43,6 @@ Go-микросервисы для цепочки Discord -> Kafka -> обраб
 
 ```bash
 COMPOSE_PROFILES=monitoring docker compose up -d
-```
-
-### Опциональный профиль `selenium`
-
-- `selenium-chrome` — Remote WebDriver для режима `GAME_IMAGE_FETCHER_TYPE=selenium`.
-
-```bash
-COMPOSE_PROFILES=selenium docker compose up -d
 ```
 
 ## Data Flow
@@ -65,12 +65,17 @@ discord-kafka-processor ──┬──► KAFKA_WEEK_TOPIC  (JSON: season, week
               │                              discord-kafka-telegram-week-sender ──► Telegram
               │
               └──► discord-kafka-game-image ──► KAFKA_GAME_IMAGE_TOPIC
-                         │  (+ MinIO/Mongo/Postgres)        │
+                         │  (+ MinIO/Postgres)              │
                                                             ▼
                                          discord-kafka-telegram-game-sender ──► Telegram
 ```
 
-## Release Workflow (v4.3.2+)
+## Release Workflow (v5.0.0+)
+
+`TAG` обязателен везде ниже: ни в `docker-compose.yml`, ни в `release.sh`,
+`deploy.sh`, `publish.sh`, `install.sh` дефолта нет — без переменной команды
+падают с понятной ошибкой вместо того, чтобы молча откатить прод на старый
+образ (так уже случалось, см. `AGENTS.md` → «Антипаттерны»).
 
 ### 1) Публикация образов через GitHub Actions
 
@@ -83,29 +88,29 @@ Workflow `.github/workflows/publish-images.yml` собирает и пушит m
 Предпочтительный релизный сценарий:
 
 ```bash
-TAG=4.3.2 ./scripts/release.sh
+TAG=5.0.0 ./scripts/release.sh
 ```
 
 Ручной эквивалент:
 
 ```bash
-git tag -a v4.3.2 -m "Release 4.3.2"
-git push origin v4.3.2
+git tag -a v5.0.0 -m "Release 5.0.0"
+git push origin v5.0.0
 ```
 
-Для релизного тега workflow публикует как минимум теги `v4.3.2`, `4.3.2` и `latest`.
+Для релизного тега workflow публикует как минимум теги `v5.0.0`, `5.0.0` и `latest`.
 
 Локальная ручная публикация остаётся только как аварийный single-arch fallback:
 
 ```bash
-TAG=4.3.2 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games docker compose build
-TAG=4.3.2 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games docker compose push
+TAG=5.0.0 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games docker compose build
+TAG=5.0.0 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games docker compose push
 ```
 
 Быстрый вариант скриптом:
 
 ```bash
-TAG=4.3.2 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games ./scripts/publish.sh
+TAG=5.0.0 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games ./scripts/publish.sh
 ```
 
 ### 2) Обновление на Raspberry Pi / обычном сервере
@@ -114,11 +119,11 @@ TAG=4.3.2 IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games ./scripts/p
 ssh pi '
   set -euo pipefail
   cd /home/colz/envs/mega_games
-  git checkout release-4.0
-  git pull --ff-only origin release-4.0
+  git checkout release-5.0
+  git pull --ff-only origin release-5.0
   export IMAGE_REGISTRY=ghcr.io
   export IMAGE_NAMESPACE=colzphml/mega_games
-  export TAG=4.3.2
+  export TAG=5.0.0
   docker compose pull
   docker compose up -d --force-recreate --remove-orphans --no-build
   docker compose ps
@@ -128,7 +133,7 @@ ssh pi '
 Быстрый вариант скриптом:
 
 ```bash
-ssh pi "cd /home/colz/envs/mega_games && IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games TAG=4.3.2 ./scripts/deploy.sh"
+ssh pi "cd /home/colz/envs/mega_games && IMAGE_REGISTRY=ghcr.io IMAGE_NAMESPACE=colzphml/mega_games TAG=5.0.0 ./scripts/deploy.sh"
 ```
 
 Здесь ничего не пушится напрямую в Raspberry Pi:
@@ -181,10 +186,14 @@ docker compose up -d --build --remove-orphans
 ssh -N \
   -L 8002:127.0.0.1:8002 \
   -L 9000:127.0.0.1:9000 \
-  -L 9001:127.0.0.1:9001 \
   -L 3000:127.0.0.1:3000 \
   pi
 ```
+
+`postgres`, `redpanda` и консоль MinIO (`9001`) наружу не публикуются — им
+тоннель не пробросить, доступ только изнутри хоста (`docker compose exec`).
+Строка с `3000` (Grafana) имеет смысл, только если на хосте поднят профиль
+`monitoring` (`COMPOSE_PROFILES=monitoring`), иначе порт просто не слушает.
 
 После туннеля:
 
@@ -192,8 +201,7 @@ ssh -N \
 |--------|-----|
 | Admin Panel | `http://localhost:8002` |
 | MinIO (прямые ссылки на картинки) | `http://localhost:9000/game-images/...` |
-| MinIO Console (управление) | `http://localhost:9001` |
-| Grafana | `http://localhost:3000` |
+| Grafana (профиль `monitoring`) | `http://localhost:3000` |
 
 Если вы в одной сети с Raspberry и порты открыты:
 
@@ -201,8 +209,7 @@ ssh -N \
 |--------|-----|
 | Admin Panel | `http://<RASPBERRY_IP>:8002` |
 | MinIO (прямые ссылки на картинки) | `http://<RASPBERRY_IP>:9000/game-images/...` |
-| MinIO Console (управление) | `http://<RASPBERRY_IP>:9001` |
-| Grafana | `http://<RASPBERRY_IP>:3000` |
+| Grafana (профиль `monitoring`) | `http://<RASPBERRY_IP>:3000` |
 
 ## MinIO: доступ к картинкам
 
@@ -220,8 +227,8 @@ docker compose exec -T minio sh -lc '
 ## Установка через curl
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.3.2/scripts/install.sh \
-  | TAG=v4.3.2 INSTALL_DIR=/opt/mega_games bash
+curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v5.0.0/scripts/install.sh \
+  | TAG=v5.0.0 INSTALL_DIR=/opt/mega_games bash
 ```
 
 Параметры:
@@ -238,7 +245,7 @@ curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v4.3.2/scripts/
 docker compose logs -f <service>
 ```
 
-Healthcheck сервиса вручную:
+Healthcheck сервиса вручную (порт `8080`; у `admin-panel` — `8081`):
 
 ```bash
 docker compose exec <service> wget -qO- http://127.0.0.1:8080/health
@@ -260,7 +267,6 @@ docker compose ps
 
 | Хранилище | Назначение | Порт |
 |-----------|-----------|------|
-| Postgres | Статусы обработки сообщений | `5432` |
-| MongoDB | Метаданные game image | `27017` |
-| MinIO | Файлы картинок (S3-совместимо) | `9000` (API), `9001` (консоль) |
-| Loki | Агрегация логов контейнеров | `3100` |
+| Postgres | Статусы обработки сообщений | `5432`, только внутри `megagames-net` |
+| MinIO | Файлы картинок (S3-совместимо) | `9000` (API, публикуется наружу); консоль `9001` только внутри сети |
+| Loki | Агрегация логов контейнеров (профиль `monitoring`) | `3100`, только внутри `megagames-net` |
