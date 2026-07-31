@@ -157,8 +157,9 @@ MongoDB убрана в v5.0 (задача V5-15): `game_image_status` в Postgr
   `buildVersion = "dev"`, `buildCommit = "unknown"` (видно в первой строке
   лога сервиса при старте)
 - Non-root пользователь (`app`) в финальном образе
-- Почти все сервисы — лейбл `autoheal=true` (нужен healthcheck; нет его у
-  `minio` и у одноразового `kafka-init`)
+- Почти все сервисы — лейбл `autoheal=true` (нужен healthcheck; нет его только
+  у одноразового `kafka-init` — он выполняется и завершается, а не остаётся
+  работать). У `minio` healthcheck есть: `mc ready local`
 
 ## АНТИПАТТЕРНЫ (ЭТОТ ПРОЕКТ)
 
