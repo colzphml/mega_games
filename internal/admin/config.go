@@ -9,9 +9,11 @@ import (
 )
 
 const (
-	defaultHealthAddr = ":8081"
-	defaultPGPort     = 5432
-	defaultTimezone   = "Europe/Moscow"
+	defaultHealthAddr  = ":8081"
+	defaultPGPort      = 5432
+	defaultTimezone    = "Europe/Moscow"
+	defaultAdminUser   = "admin"
+	defaultAdminPasswd = ""
 )
 
 type Config struct {
@@ -22,6 +24,8 @@ type Config struct {
 	PostgresPassword string
 	PostgresDB       string
 	Timezone         string
+	AdminUser        string
+	AdminPassword    string
 }
 
 func Load() (Config, error) {
@@ -47,6 +51,11 @@ func Load() (Config, error) {
 	}
 
 	cfg.Timezone = optionalEnv("TZ", defaultTimezone)
+
+	cfg.AdminUser = optionalEnv("ADMIN_USER", defaultAdminUser)
+	// ADMIN_PASSWORD has no default: an empty value disables the auth
+	// guard entirely so a local run needs no setup (see admin.BasicAuth).
+	cfg.AdminPassword = optionalEnv("ADMIN_PASSWORD", defaultAdminPasswd)
 
 	return cfg, nil
 }

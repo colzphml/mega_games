@@ -111,8 +111,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     mem_limit: 256m
     logging: *default-logging
-    ports:
-      - "${POSTGRES_EXPOSE_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 30s
@@ -137,8 +135,7 @@ services:
     mem_limit: 256m
     logging: *default-logging
     ports:
-      - "${MINIO_EXPOSE_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MINIO_EXPOSE_PORT:-9000}:9000"   # game-image links used directly by the dashboard
     volumes:
       - minio-data:/data
     networks:

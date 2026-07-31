@@ -72,20 +72,28 @@ func main() {
 
 	mux.HandleFunc("POST /schedule/upload", scheduleHandler.Upload)
 
-	// Health endpoint
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
 	// Serve static assets
 	// Assumes running from project root
 	fs := http.FileServer(http.Dir("cmd/admin_panel/assets"))
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", fs))
 
+	// The admin UI and API sit behind basic auth: it exposes
+	// DELETE /teams/{name} and POST /schedule/upload, which used to be
+	// reachable by anyone on the network. /health stays outside the
+	// guard because the container healthcheck has no credentials.
+	guarded := admin.BasicAuth(cfg.AdminUser, cfg.AdminPassword, mux)
+
+	root := http.NewServeMux()
+	root.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	})
+	root.Handle("/", guarded)
+
 	srv := &http.Server{
-		Addr:    cfg.HealthAddr,
-		Handler: mux,
+		Addr:              cfg.HealthAddr,
+		Handler:           root,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	// Start server in goroutine
