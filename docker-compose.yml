@@ -11,7 +11,7 @@ services:
       # flags Redpanda reserves memory and pins cores as if it were.
       - --overprovisioned
       - --smp=1
-      - --memory=512M
+      - --memory=256M
       - --reserve-memory=0M
       - --default-log-level=warn
     environment:
