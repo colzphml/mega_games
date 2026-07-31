@@ -44,7 +44,7 @@ func NewPostgres(t *testing.T) *pgxpool.Pool {
 	// the test goroutine via runtime.Goexit, so a t.Cleanup registered only
 	// after such a call never runs on that failure path, leaking the
 	// container until Ryuk's session-end reaper catches it. Matches
-	// brokertest.NewRedpanda's fix for the identical bug.
+	// brokertest.NewKafka's fix for the identical bug.
 	t.Cleanup(func() {
 		if err := testcontainers.TerminateContainer(container); err != nil {
 			t.Logf("terminate container: %v", err)
