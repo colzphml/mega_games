@@ -46,8 +46,11 @@ project.xcodeproj/
 
 screens/
 
-main
-admin_panel
+# Compiled binaries, anchored to the repository root on purpose: without
+# the leading slash these also match the cmd/admin_panel/ source directory,
+# which silently hid every new file added there from git add.
+/main
+/admin_panel
 
 # SDD workspace (subagent-driven development scratch)
 .superpowers/
