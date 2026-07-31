@@ -57,6 +57,14 @@ func New(cfg config.Config, pgStore *pgstore.Store, reader *kafkago.Reader, writ
 }
 
 func (p *Processor) Run(ctx context.Context) error {
+	// Zero deliberately disables the periodic retry loop (see retryLoop).
+	// A negative value has no such meaning — it is almost certainly a
+	// typo — so reject it outright instead of silently treating it like
+	// zero, before touching Postgres or Kafka.
+	if p.cfg.ProcessRetryInterval < 0 {
+		return fmt.Errorf("PROCESS_RETRY_INTERVAL must not be negative, got %s", p.cfg.ProcessRetryInterval)
+	}
+
 	if err := p.reprocessPending(ctx, p.cfg.ProcessRetryInterval, "startup"); err != nil {
 		p.log.Error().Err(err).Msg("failed to reprocess pending messages")
 	}
@@ -69,6 +77,15 @@ func (p *Processor) Run(ctx context.Context) error {
 }
 
 func (p *Processor) retryLoop(ctx context.Context) {
+	// time.NewTicker panics for a non-positive duration, and this method
+	// runs in an unrecovered goroutine, so a bad interval would otherwise
+	// crash the whole process at startup. Zero means "retries disabled";
+	// Run already rejects negative values before this goroutine is even
+	// started, but the guard stays here too so retryLoop is safe on its
+	// own regardless of caller.
+	if p.cfg.ProcessRetryInterval <= 0 {
+		return
+	}
 	ticker := time.NewTicker(p.cfg.ProcessRetryInterval)
 	defer ticker.Stop()
 	for {
