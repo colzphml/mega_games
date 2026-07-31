@@ -8,16 +8,17 @@ import (
 )
 
 // The image column on game_image_status is JSONB and must be interpreted
-// correctly in all four shapes it can hold: unset (SQL NULL), an explicit
-// JSON null, a populated object to reuse, and {} — a syntactically valid
-// but semantically empty object. {} is not written by the service itself
-// (the single writer always fills every field in together), but a manual
-// "clear this row for reprocessing" UPDATE could plausibly write '{}'
-// instead of NULL, and json.Unmarshal happily turns {} into a non-nil,
-// all-zero-value struct — which looks exactly like "image already exists"
-// unless something checks for that.
+// correctly in every shape it can hold: unset (SQL NULL), an explicit JSON
+// null, a populated object to reuse, {} — a syntactically valid but
+// semantically empty object — and a partially-populated object that has
+// one of the two required fields but not the other. None of the last three
+// are written by the service itself (the single writer always fills every
+// field in together), but a manual UPDATE clearing a row for reprocessing
+// could plausibly produce any of them, and json.Unmarshal turns all of them
+// into a non-nil struct — which looks exactly like "image already exists"
+// unless something checks the fields that actually matter.
 //
-// This runs the four states through a real Postgres JSONB column (via the
+// This runs every state through a real Postgres JSONB column (via the
 // pgtest harness) rather than hand-built Go byte literals, so what's under
 // test is the actual NULL/'null'::jsonb/'{}'::jsonb round trip, not an
 // assumption about it.
@@ -36,6 +37,8 @@ func TestDecodeStoredImageMetaAgainstRealJSONB(t *testing.T) {
 	insert("unset", "NULL")
 	insert("json_null", "'null'::jsonb")
 	insert("empty_object", "'{}'::jsonb")
+	insert("key_without_bucket", `'{"image_object":"games/42/msg-1.png"}'::jsonb`)
+	insert("bucket_without_key", `'{"image_bucket":"game-images"}'::jsonb`)
 	insert("populated", `'{"image_url":"https://example.test/img.png","image_bucket":"game-images","image_object":"games/42/msg-1.png","content_type":"image/png","size":1234,"fetcher":"headless","stored_at":"2026-01-01T00:00:00Z"}'::jsonb`)
 
 	readImage := func(id string) []byte {
@@ -55,6 +58,13 @@ func TestDecodeStoredImageMetaAgainstRealJSONB(t *testing.T) {
 		{"column not filled generates a new image", "unset", false},
 		{"JSON null generates a new image", "json_null", false},
 		{"empty object generates a new image instead of being silently reused", "empty_object", false},
+		// discord_kafka_telegram_game_sender.decodeEvent rejects an event
+		// whose ObjectKey or Bucket is empty (it needs both to download
+		// from MinIO), so treating one-without-the-other as reusable here
+		// would just move the same silent "published, then dropped
+		// downstream" failure the {} case had into a different JSON shape.
+		{"an image key without a bucket generates a new image instead of being silently reused", "key_without_bucket", false},
+		{"a bucket without an image key generates a new image instead of being silently reused", "bucket_without_key", false},
 		{"populated object is reused", "populated", true},
 	}
 
@@ -70,8 +80,13 @@ func TestDecodeStoredImageMetaAgainstRealJSONB(t *testing.T) {
 			if gotReuse != tc.wantReuse {
 				t.Errorf("decodeStoredImageMeta(%q) reuse = %v, want %v (meta=%#v)", raw, gotReuse, tc.wantReuse, meta)
 			}
-			if tc.wantReuse && meta.ObjectKey == "" {
-				t.Errorf("expected a populated ObjectKey on a reusable image, got empty")
+			if tc.wantReuse {
+				if meta.ObjectKey == "" {
+					t.Errorf("expected a populated ObjectKey on a reusable image, got empty")
+				}
+				if meta.Bucket == "" {
+					t.Errorf("expected a populated Bucket on a reusable image, got empty")
+				}
 			}
 		})
 	}
