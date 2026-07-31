@@ -253,7 +253,7 @@ func (p *Processor) handleMessage(ctx context.Context, messageID string, payload
 		return err
 	}
 
-	message, err := formatter.BuildWeekMessage(payload, teams, games)
+	message, err := formatter.BuildWeekMessage(payload, teams, games, p.cfg.AnnounceDeadline)
 	if err != nil {
 		return err
 	}

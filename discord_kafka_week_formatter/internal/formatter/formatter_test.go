@@ -3,9 +3,14 @@ package formatter
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/colzphml/mega_games/discord_kafka_week_formatter/internal/store"
 )
+
+// testDeadline mirrors the WEEK_ANNOUNCE_DEADLINE default; the exact value
+// doesn't matter to these tests since none of them assert the rendered date.
+const testDeadline = 40 * time.Hour
 
 func testTeams() map[string]store.Team {
 	return map[string]store.Team{
@@ -19,6 +24,7 @@ func TestPostseasonExplainsMissingSchedule(t *testing.T) {
 		store.WeekPayload{Season: "postseason", Week: 1},
 		testTeams(),
 		nil,
+		testDeadline,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -40,6 +46,7 @@ func TestRegularSeasonListsGames(t *testing.T) {
 		store.WeekPayload{Season: "regular", Week: 3},
 		testTeams(),
 		[]store.Game{{Home: "Falcons", Away: "Buccaneers"}},
+		testDeadline,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -58,6 +65,7 @@ func TestPreseasonWeekFourHasNoGames(t *testing.T) {
 		store.WeekPayload{Season: "preseason", Week: 4},
 		testTeams(),
 		nil,
+		testDeadline,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -76,6 +84,7 @@ func TestGameLineEscapesNickname(t *testing.T) {
 		store.WeekPayload{Season: "regular", Week: 1},
 		teams,
 		[]store.Game{{Home: "A", Away: "B"}},
+		testDeadline,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -100,6 +109,7 @@ func TestGameLineEscapesDotAndDash(t *testing.T) {
 		store.WeekPayload{Season: "regular", Week: 1},
 		teams,
 		[]store.Game{{Home: "A", Away: "B"}},
+		testDeadline,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -119,6 +129,7 @@ func TestFooterEscapesPeriod(t *testing.T) {
 		store.WeekPayload{Season: "regular", Week: 1},
 		testTeams(),
 		nil,
+		testDeadline,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -136,6 +147,7 @@ func TestMarkupSurvivesEscaping(t *testing.T) {
 		store.WeekPayload{Season: "regular", Week: 3},
 		testTeams(),
 		[]store.Game{{Home: "Falcons", Away: "Buccaneers"}},
+		testDeadline,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -145,5 +157,39 @@ func TestMarkupSurvivesEscaping(t *testing.T) {
 	}
 	if !strings.Contains(got, "[ATL](t.me/alice)") {
 		t.Errorf("link markup must stay intact and clickable, got:\n%s", got)
+	}
+}
+
+func TestDeadlineUsesConfiguredDuration(t *testing.T) {
+	// The footer date must move with the deadline argument, not a fixed
+	// 40h baked into the package — that's the whole point of V5-27.
+	short, err := BuildWeekMessage(
+		store.WeekPayload{Season: "regular", Week: 1},
+		testTeams(),
+		nil,
+		1*time.Hour,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	long, err := BuildWeekMessage(
+		store.WeekPayload{Season: "regular", Week: 1},
+		testTeams(),
+		nil,
+		200*time.Hour,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	shortDeadline := time.Now().In(time.Local).Add(1 * time.Hour).Format("02 Jan 2006 15:04")
+	longDeadline := time.Now().In(time.Local).Add(200 * time.Hour).Format("02 Jan 2006 15:04")
+	if !strings.Contains(short, shortDeadline) {
+		t.Errorf("expected footer to use the 1h deadline %q, got:\n%s", shortDeadline, short)
+	}
+	if !strings.Contains(long, longDeadline) {
+		t.Errorf("expected footer to use the 200h deadline %q, got:\n%s", longDeadline, long)
+	}
+	if short == long {
+		t.Errorf("messages built with different deadlines must not be identical")
 	}
 }

@@ -9,10 +9,6 @@ import (
 	"github.com/colzphml/mega_games/internal/common/tgmarkdown"
 )
 
-// announceDeadline is how long players have to announce their match after
-// the week-change post goes out. In V5-27 this becomes configurable.
-var announceDeadline = 40 * time.Hour
-
 // postseasonNote replaces the match list for playoff weeks.
 //
 // There is no source for a playoff schedule: the regular season is
@@ -27,7 +23,11 @@ const postseasonNote = "Игра плейофф, расписание см. в �
 // underscore would.
 const cpuMarker = `\(CPU\)`
 
-func BuildWeekMessage(payload store.WeekPayload, teams map[string]store.Team, games []store.Game) (string, error) {
+// BuildWeekMessage renders the Telegram-ready text for a week-change post.
+// deadline is how long players have to announce their match after the post
+// goes out; it is added to the current time to produce the footer date, and
+// comes from the caller's configuration (WEEK_ANNOUNCE_DEADLINE).
+func BuildWeekMessage(payload store.WeekPayload, teams map[string]store.Team, games []store.Game, deadline time.Duration) (string, error) {
 	if payload.Season == "" {
 		return "", fmt.Errorf("invalid week payload")
 	}
@@ -58,8 +58,8 @@ func BuildWeekMessage(payload store.WeekPayload, teams map[string]store.Team, ga
 	}
 
 	base := textBuilder.String()
-	deadline := time.Now().In(time.Local).Add(announceDeadline).Format("02 Jan 2006 15:04")
-	footer := fmt.Sprintf("❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nДо %s просьба указать анонс матча реплаем к этому посту", deadline)
+	deadlineText := time.Now().In(time.Local).Add(deadline).Format("02 Jan 2006 15:04")
+	footer := fmt.Sprintf("❗️Пожалуйста, договоритесь прямо сейчас о матче во избежание затяжек шага.\n\nДо %s просьба указать анонс матча реплаем к этому посту", deadlineText)
 	return fmt.Sprintf("%s\n\n_%s_", base, tgmarkdown.Escape(footer)), nil
 }
 

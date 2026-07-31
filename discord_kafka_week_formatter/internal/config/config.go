@@ -22,6 +22,7 @@ const (
 	defaultPostgresMaxAttempts = 30
 	defaultMaxAttempts         = 10
 	defaultRetryInterval       = 1 * time.Minute
+	defaultAnnounceDeadline    = 40 * time.Hour
 )
 
 type Config struct {
@@ -45,6 +46,7 @@ type Config struct {
 	Timezone             string
 	MaxAttempts          int
 	ProcessRetryInterval time.Duration
+	AnnounceDeadline     time.Duration
 }
 
 func Load() (Config, error) {
@@ -106,6 +108,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.ProcessRetryInterval, err = durationEnv("PROCESS_RETRY_INTERVAL", defaultRetryInterval); err != nil {
+		return Config{}, err
+	}
+	if cfg.AnnounceDeadline, err = durationEnv("WEEK_ANNOUNCE_DEADLINE", defaultAnnounceDeadline); err != nil {
 		return Config{}, err
 	}
 
