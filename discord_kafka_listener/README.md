@@ -49,7 +49,7 @@ docker compose exec discord-kafka-listener wget -qO- http://127.0.0.1:8080/healt
 
 Посмотреть, что приходит в Kafka:
 ```
-docker compose exec kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic ${KAFKA_INPUT_TOPIC} --from-beginning
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic ${KAFKA_INPUT_TOPIC} --from-beginning
 ```
 
 ## Траблшутинг

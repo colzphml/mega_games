@@ -20,9 +20,9 @@ Go-микросервисы для цепочки Discord -> Kafka -> обраб
 
 ### Инфраструктура
 
-- `redpanda` — брокер сообщений, Kafka API-совместим (порт `9092` только
-  внутри `megagames-net`, наружу не публикуется).
-- `kafka-init` — служебный контейнер, создаёт топики через `rpk` при старте.
+- `kafka` — брокер сообщений, Apache Kafka в режиме KRaft (без Zookeeper;
+  порт `9092` только внутри `megagames-net`, наружу не публикуется).
+- `kafka-init` — служебный контейнер, создаёт топики через `kafka-topics.sh` при старте.
 - `postgres` — статусы обработки (порт `5432` только внутри `megagames-net`).
 - `minio` — файлы картинок, S3-совместимое хранилище (`:9000`; консоль на
   `9001` наружу не публикуется).
@@ -190,7 +190,7 @@ ssh -N \
   pi
 ```
 
-`postgres`, `redpanda` и консоль MinIO (`9001`) наружу не публикуются — им
+`postgres`, `kafka` и консоль MinIO (`9001`) наружу не публикуются — им
 тоннель не пробросить, доступ только изнутри хоста (`docker compose exec`).
 Строка с `3000` (Grafana) имеет смысл, только если на хосте поднят профиль
 `monitoring` (`COMPOSE_PROFILES=monitoring`), иначе порт просто не слушает.
@@ -251,10 +251,10 @@ Healthcheck сервиса вручную (порт `8080`; у `admin-panel` —
 docker compose exec <service> wget -qO- http://127.0.0.1:8080/health
 ```
 
-Redpanda consumer (чтение топика):
+Kafka consumer (чтение топика):
 
 ```bash
-docker compose exec redpanda rpk topic consume <topic> --brokers redpanda:9092
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic <topic> --from-beginning
 ```
 
 Статус всех контейнеров:

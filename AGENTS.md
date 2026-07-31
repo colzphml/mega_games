@@ -35,7 +35,7 @@ cd ../mega_games-V5-07
 
 | Запрещено | Почему |
 |---|---|
-| Удалять тома `postgres-data`, `minio-data`, `mongo-data`, `kafka-data`, `zookeeper-data`, `zookeeper-log` | Требование заказчика — вся история сохраняется, даже для уже отключённых Mongo, Kafka и Zookeeper |
+| Удалять тома `postgres-data`, `minio-data`, `mongo-data`, `kafka-data`, `zookeeper-data`, `zookeeper-log`, `redpanda-data` | Требование заказчика — вся история сохраняется, даже для уже отключённых Mongo, Kafka, Zookeeper и Redpanda (V5-38: Redpanda не запускается на целевом Pi, заменена на Kafka/KRaft; её том остаётся как есть) |
 | Включать lifecycle-политику (автоудаление) в MinIO | Та же причина: ничего не должно стираться само |
 | Задавать дефолт для `TAG` в скриптах или compose | Дефолт `4.3.2` уже приводил к молчаливому откату прода на семь версий назад (`AUDIT.md`, P0-1) |
 | Собирать релизные образы на Raspberry Pi | Публикация образов — только через GitHub Actions в GHCR |
@@ -43,7 +43,7 @@ cd ../mega_games-V5-07
 
 ## ОБЗОР
 
-Go-микросервисы: Discord -> Kafka -> Обработка -> Telegram. Событийная архитектура: брокер — Redpanda (Kafka API-совместим, топики и env всё ещё называются `KAFKA_*`), хранение — Postgres (статусы) + MinIO (файлы картинок). MongoDB убрана в v5.0 — была полным дублем `game_image_status` в Postgres.
+Go-микросервисы: Discord -> Kafka -> Обработка -> Telegram. Событийная архитектура: брокер — Apache Kafka в режиме KRaft, без Zookeeper (V5-38; до этого недолго был Redpanda — Kafka API-совместим, но её бинарь не запускается на целевом Raspberry Pi 4, не хватает инструкций ARMv8.1), хранение — Postgres (статусы) + MinIO (файлы картинок). MongoDB убрана в v5.0 — была полным дублем `game_image_status` в Postgres.
 
 ## СТРУКТУРА
 
@@ -73,7 +73,7 @@ mega_games/
 
 | Задача | Расположение | Примечания |
 |--------|--------------|------------|
-| Добавить топик | `docker-compose.yml` (kafka-init) + конфиги сервисов | `rpk topic create` в цикле entrypoint, брокер — Redpanda |
+| Добавить топик | `docker-compose.yml` (kafka-init) + конфиги сервисов | `kafka-topics.sh --create --if-not-exists` в цикле entrypoint, брокер — Kafka (KRaft) |
 | Изменить парсинг сообщений | `discord_kafka_processor/internal/parser/` | Regex-based |
 | Сменить image fetcher | `discord_kafka_game_image/internal/middle/` | `gochrome/`, `headless/` (`selenium/` удалён в v5.0 вместе с профилем compose) |
 | Добавить таблицу Postgres | `internal/store/store.go` сервиса (у `game_image` — `internal/pgstore/store.go`) | Автомиграция через `EnsureSchema()` |
@@ -111,7 +111,7 @@ telegram_week_sender           telegram_game_sender
 |-----------|------------|--------------|
 | Postgres | Статусы обработки, данные расписания, статусы и метаданные game-image (таблица `game_image_status`, включая `image_url`) | Все сервисы |
 | MinIO | Файлы изображений (S3-совместимый) | game_image, telegram_game_sender |
-| Redpanda | Событийный обмен между сервисами, Kafka API-совместим (env и топики всё ещё `KAFKA_*`) | Все сервисы |
+| Kafka (KRaft) | Событийный обмен между сервисами, без Zookeeper (env и топики называются `KAFKA_*`) | Все сервисы |
 
 MongoDB убрана в v5.0 (задача V5-15): `game_image_status` в Postgres уже содержал
 всё то же самое (сверено 600/600 записей перед удалением), отдельное хранилище
@@ -201,8 +201,8 @@ docker compose logs -f <service>
 # Проверка health (порт 8080; у admin-panel — 8081)
 docker compose exec <service> wget -qO- http://127.0.0.1:8080/health
 
-# Чтение топика (брокер — Redpanda, топики и переменные всё ещё называются KAFKA_*)
-docker compose exec redpanda rpk topic consume <topic> --brokers redpanda:9092
+# Чтение топика (брокер — Kafka/KRaft, топики и переменные называются KAFKA_*)
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic <topic> --from-beginning
 
 # Загрузка данных расписания
 docker compose exec postgres psql -U megagames -d megagames < discord_tools/sql/schema.sql
@@ -283,7 +283,8 @@ Guardrails для live-хоста:
   (парсер Discord-сообщений, форматтер недели, классификация ошибок Discord,
   markdown-экранирование, eligibility-пороги, Basic Auth админки и др.) и
   интеграционные на testcontainers — Postgres через `internal/common/pgtest`,
-  Redpanda через `internal/common/brokertest`, плюс MinIO. Интеграционные
+  Kafka (KRaft, `apache/kafka:3.9.0` — тот же образ, что в проде) через
+  `internal/common/brokertest`, плюс MinIO. Интеграционные
   пропускают себя в `-short`-режиме через `testing.Short()`. Быстрый прогон
   без Docker: `go test ./... -short`. Полный прогон (нужен запущенный Docker):
   `go test ./...`
