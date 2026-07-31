@@ -35,7 +35,7 @@
 | V5-26 Обязательный TAG | ✅ | `v5/26-tag-required` | 0b888f6 |
 | V5-27 Конфигурация и хост | ✅ | `v5/27-config` | 7d752e4 |
 | V5-28 Документация для агентов | ✅ | `v5/28-agent-docs` | 389ef53 |
-| V5-29 README и AGENTS.md | ⬜ | `v5/29-docs` | — |
+| V5-29 README и AGENTS.md | ✅ | `v5/29-docs` | b2a0e94 |
 | V5-30 Миграция и выкатка | ⬜ | `v5/30-release` | — |
 | V5-31 Устойчивость headless | ✅ | `v5/31-headless-resilience` | 06726c9 |
 
