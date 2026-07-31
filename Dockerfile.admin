@@ -25,7 +25,7 @@ RUN set -eu; \
     GOOS="${TARGETOS:-linux}"; \
     GOARCH="${TARGETARCH:-amd64}"; \
     CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
-    go build -o admin-panel ./cmd/admin_panel/main.go
+    go build -o admin-panel ./cmd/admin_panel
 
 # Final stage
 FROM alpine:3.21
