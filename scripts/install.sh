@@ -224,16 +224,12 @@ if [[ "$NONINTERACTIVE" != "1" ]] && confirm "Configure .env interactively now?"
   [[ -n "$v" ]] && set_env "TELEGRAM_GAME_CHAT_ID" "$v" "$ENV_FILE"
 
   if [[ -n "$PROMPT_INPUT" ]]; then
-    read -r -p "GAME_IMAGE_FETCHER_TYPE (headless|gochrome|selenium) [headless]: " v < "$PROMPT_INPUT" || true
+    read -r -p "GAME_IMAGE_FETCHER_TYPE (headless|gochrome) [headless]: " v < "$PROMPT_INPUT" || true
   else
-    read -r -p "GAME_IMAGE_FETCHER_TYPE (headless|gochrome|selenium) [headless]: " v || true
+    read -r -p "GAME_IMAGE_FETCHER_TYPE (headless|gochrome) [headless]: " v || true
   fi
   if [[ -n "$v" ]]; then
     set_env "GAME_IMAGE_FETCHER_TYPE" "$v" "$ENV_FILE"
-  fi
-
-  if confirm "Enable selenium profile?" "N"; then
-    set_env "COMPOSE_PROFILES" "selenium" "$ENV_FILE"
   fi
 fi
 

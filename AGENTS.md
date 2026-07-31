@@ -144,7 +144,16 @@ MongoDB убрана в v5.0 (задача V5-15): `game_image_status` в Postgr
 
 ### Docker
 - Multi-stage сборка: `golang:1.25.5-alpine` -> `alpine:3.21`
-- Версия через `-ldflags` из `git describe --tags --always`
+- Версия зашивается через `-ldflags -X main.buildVersion=...` в 6 kafka-сервисах
+  (не в `admin-panel` — `Dockerfile.admin` собирает голым `go build`, без версии
+  вообще). Значение приходит через build-args `VERSION`/`COMMIT`/`BUILD_DATE`,
+  **не** через `git describe` — он нигде не вызывается, и `.dockerignore`
+  исключает `.git` из контекста сборки, так что вызвать его оттуда и не
+  получилось бы. CI (`publish-images.yml`) передаёт их из `github.ref_name`/`github.sha`;
+  локальный `docker compose build` (так собирают `publish.sh` и `install.sh`)
+  передаёт в `args:` только `TZ` — версия остаётся дефолтом из кода:
+  `buildVersion = "dev"`, `buildCommit = "unknown"` (видно в первой строке
+  лога сервиса при старте)
 - Non-root пользователь (`app`) в финальном образе
 - Почти все сервисы — лейбл `autoheal=true` (нужен healthcheck; нет его у
   `minio` и у одноразового `kafka-init`)
