@@ -27,7 +27,7 @@ die() {
 # the same as the image TAG consumed by deploy.sh/publish.sh, which
 # has no 'v' prefix.
 if [[ -z "${TAG:-}" ]]; then
-  die "TAG is required. Set it to the release you want to install, e.g.: curl -fsSL <install.sh-url> | TAG=v5.0.0 bash"
+  die "TAG is required. Set it to the release you want to install, e.g.: curl -fsSL https://raw.githubusercontent.com/colzphml/mega_games/v5.0.0/scripts/install.sh | TAG=v5.0.0 bash"
 fi
 
 require_cmd() {
