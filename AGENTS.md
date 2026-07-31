@@ -35,7 +35,7 @@ cd ../mega_games-V5-07
 
 | Запрещено | Почему |
 |---|---|
-| Удалять тома `postgres-data`, `minio-data`, `mongo-data`, `kafka-data`, `zookeeper-data` | Требование заказчика — вся история сохраняется, даже для уже отключённых Mongo и Kafka |
+| Удалять тома `postgres-data`, `minio-data`, `mongo-data`, `kafka-data`, `zookeeper-data`, `zookeeper-log` | Требование заказчика — вся история сохраняется, даже для уже отключённых Mongo, Kafka и Zookeeper |
 | Включать lifecycle-политику (автоудаление) в MinIO | Та же причина: ничего не должно стираться само |
 | Задавать дефолт для `TAG` в скриптах или compose | Дефолт `4.3.2` уже приводил к молчаливому откату прода на семь версий назад (`AUDIT.md`, P0-1) |
 | Собирать релизные образы на Raspberry Pi | Публикация образов — только через GitHub Actions в GHCR |
