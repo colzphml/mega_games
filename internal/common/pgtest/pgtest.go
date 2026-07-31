@@ -39,6 +39,17 @@ func NewPostgres(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("start postgres container: %v", err)
 	}
+	// Register cleanup immediately after the container starts, before any
+	// call that can fail (ConnectionString, pgxpool.New): t.Fatalf halts
+	// the test goroutine via runtime.Goexit, so a t.Cleanup registered only
+	// after such a call never runs on that failure path, leaking the
+	// container until Ryuk's session-end reaper catches it. Matches
+	// brokertest.NewRedpanda's fix for the identical bug.
+	t.Cleanup(func() {
+		if err := testcontainers.TerminateContainer(container); err != nil {
+			t.Logf("terminate container: %v", err)
+		}
+	})
 
 	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
@@ -49,13 +60,9 @@ func NewPostgres(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("connect to postgres: %v", err)
 	}
-
-	t.Cleanup(func() {
-		pool.Close()
-		if err := testcontainers.TerminateContainer(container); err != nil {
-			t.Logf("terminate container: %v", err)
-		}
-	})
+	// Cleanups run LIFO, so this closes the pool before the container
+	// termination registered above runs.
+	t.Cleanup(pool.Close)
 
 	return pool
 }
