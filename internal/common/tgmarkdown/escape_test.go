@@ -1,6 +1,39 @@
 package tgmarkdown
 
-import "testing"
+import (
+	"testing"
+)
+
+// reservedMarkdownV2Characters is Telegram's own list of MarkdownV2
+// special characters (core.telegram.org/bots/api#markdownv2-style),
+// transcribed independently of escape.go's escaper table on purpose: if a
+// character is ever dropped from that table, this list must still name it
+// so the test below still catches the gap. Out of these 19, only six were
+// ever exercised by a test before this one (four through Escape directly:
+// '_', '*', '[', ']'; two more only indirectly, through EscapeLinkURL's
+// narrower rule: '\' and ')'). An unescaped character here makes Telegram
+// reject the whole message with HTTP 400, which then burns the retry
+// budget and lands the post in the failed table.
+var reservedMarkdownV2Characters = []string{
+	"\\", "_", "*", "[", "]", "(", ")", "~", "`",
+	">", "#", "+", "-", "=", "|", "{", "}", ".", "!",
+}
+
+func TestEscapeAllReservedCharacters(t *testing.T) {
+	if len(reservedMarkdownV2Characters) != 19 {
+		t.Fatalf("test setup error: MarkdownV2 reserves 19 characters, this list has %d", len(reservedMarkdownV2Characters))
+	}
+	for _, c := range reservedMarkdownV2Characters {
+		t.Run(c, func(t *testing.T) {
+			got := Escape("a" + c + "b")
+			want := "a" + "\\" + c + "b"
+			if got != want {
+				t.Errorf("Escape(%q) = %q, want %q: %q must be escaped, or Telegram "+
+					"rejects the whole message", "a"+c+"b", got, want, c)
+			}
+		})
+	}
+}
 
 func TestEscapeUnderscoreInNickname(t *testing.T) {
 	got := Escape("some_user")
