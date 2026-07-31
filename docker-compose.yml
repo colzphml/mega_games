@@ -358,7 +358,17 @@ services:
       - megagames-net
 
   autoheal:
-    image: willfarrell/autoheal:latest
+    # willfarrell/autoheal has no maintained version tag to pin to:
+    # Docker Hub's newest one is 1.2.0 from 2021-07-08, GitHub has no
+    # releases at all, and upstream's own docs describe :latest as
+    # "built daily" and use it directly in their examples - pinning to
+    # 1.2.0 would be a 5-year regression, not a fix. Pinned by digest
+    # instead, to still stop unannounced drift: this is what :latest
+    # resolved to on 2026-07-31 (verified via `docker pull` and the
+    # Docker Hub API). Trade-off: this also freezes out the automatic
+    # base-image security patches that daily :latest rebuilds carried -
+    # bumping the digest deliberately from now on is the replacement.
+    image: willfarrell/autoheal@sha256:cc3687207fbc8e2d296de6b8ecc449ca9dd6845bd4ed988331a3fb73ce2d42c2
     restart: unless-stopped
     environment:
       AUTOHEAL_CONTAINER_LABEL: autoheal
