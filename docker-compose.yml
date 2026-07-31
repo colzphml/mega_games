@@ -70,7 +70,7 @@ services:
       - megagames-net
 
   discord-kafka-listener:
-    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-listener:${TAG:-4.3.2}
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-listener:${TAG:?TAG is required, e.g. TAG=5.0.0}
     build:
       context: .
       dockerfile: discord_kafka_listener/Dockerfile
@@ -142,7 +142,7 @@ services:
       - megagames-net
 
   discord-kafka-processor:
-    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-processor:${TAG:-4.3.2}
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-processor:${TAG:?TAG is required, e.g. TAG=5.0.0}
     build:
       context: .
       dockerfile: discord_kafka_processor/Dockerfile
@@ -173,7 +173,7 @@ services:
       - megagames-net
 
   discord-kafka-week-formatter:
-    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-week-formatter:${TAG:-4.3.2}
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-week-formatter:${TAG:?TAG is required, e.g. TAG=5.0.0}
     build:
       context: .
       dockerfile: discord_kafka_week_formatter/Dockerfile
@@ -204,7 +204,7 @@ services:
       - megagames-net
 
   discord-kafka-game-image:
-    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-game-image:${TAG:-4.3.2}
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-game-image:${TAG:?TAG is required, e.g. TAG=5.0.0}
     build:
       context: .
       dockerfile: discord_kafka_game_image/Dockerfile
@@ -237,7 +237,7 @@ services:
       - megagames-net
 
   discord-kafka-telegram-week-sender:
-    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-telegram-week-sender:${TAG:-4.3.2}
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-telegram-week-sender:${TAG:?TAG is required, e.g. TAG=5.0.0}
     build:
       context: .
       dockerfile: discord_kafka_telegram_week_sender/Dockerfile
@@ -268,7 +268,7 @@ services:
       - megagames-net
 
   discord-kafka-telegram-game-sender:
-    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-telegram-game-sender:${TAG:-4.3.2}
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/discord-kafka-telegram-game-sender:${TAG:?TAG is required, e.g. TAG=5.0.0}
     build:
       context: .
       dockerfile: discord_kafka_telegram_game_sender/Dockerfile
@@ -301,7 +301,7 @@ services:
       - megagames-net
 
   admin-panel:
-    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/admin-panel:${TAG:-4.3.2}
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-colzphml/mega_games}/admin-panel:${TAG:?TAG is required, e.g. TAG=5.0.0}
     build:
       context: .
       dockerfile: Dockerfile.admin

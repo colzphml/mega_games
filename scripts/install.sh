@@ -2,10 +2,8 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/colzphml/mega_games.git"
-DEFAULT_TAG="v4.3.2"
 DEFAULT_INSTALL_DIR="/opt/mega_games"
 
-TAG="${TAG:-$DEFAULT_TAG}"
 INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
 NONINTERACTIVE="${NONINTERACTIVE:-0}"
 PROMPT_INPUT=""
@@ -22,6 +20,15 @@ die() {
   printf 'ERROR: %s\n' "$*" >&2
   exit 1
 }
+
+# No default: this script is fetched fresh via curl on machines that
+# have never run it before, so it must not silently install a stale
+# release. TAG here is a git tag ('v'-prefixed, e.g. v5.0.0) -- not
+# the same as the image TAG consumed by deploy.sh/publish.sh, which
+# has no 'v' prefix.
+if [[ -z "${TAG:-}" ]]; then
+  die "TAG is required. Set it to the release you want to install, e.g.: curl -fsSL <install.sh-url> | TAG=v5.0.0 bash"
+fi
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"

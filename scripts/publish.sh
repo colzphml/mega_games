@@ -1,8 +1,14 @@
 #!/bin/bash
 set -e
 
-# Default tag if not set
-export TAG="${TAG:-4.3.2}"
+# No default: the previous 4.3.2 fallback would have built and pushed
+# a seven-release-old image under a stale tag if TAG was left unset.
+if [[ -z "${TAG:-}" ]]; then
+  printf 'ERROR: TAG is required, e.g. TAG=5.0.0 %s\n' "$0" >&2
+  exit 1
+fi
+
+export TAG
 export IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io}"
 export IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-colzphml/mega_games}"
 
