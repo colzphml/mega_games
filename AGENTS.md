@@ -149,7 +149,9 @@ MongoDB убрана в v5.0 (задача V5-15): `game_image_status` в Postgr
   вообще). Значение приходит через build-args `VERSION`/`COMMIT`/`BUILD_DATE`,
   **не** через `git describe` — он нигде не вызывается, и `.dockerignore`
   исключает `.git` из контекста сборки, так что вызвать его оттуда и не
-  получилось бы. CI (`publish-images.yml`) передаёт их из `github.ref_name`/`github.sha`;
+  получилось бы. CI (`publish-images.yml`) берёт `VERSION` из `github.ref_name`
+  (для тега) или `github.sha`, `COMMIT` — из `github.sha`, `BUILD_DATE` —
+  из отдельно вычисляемой метки времени шага `prep`;
   локальный `docker compose build` (так собирают `publish.sh` и `install.sh`)
   передаёт в `args:` только `TZ` — версия остаётся дефолтом из кода:
   `buildVersion = "dev"`, `buildCommit = "unknown"` (видно в первой строке
