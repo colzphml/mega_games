@@ -160,34 +160,75 @@ func TestMarkupSurvivesEscaping(t *testing.T) {
 	}
 }
 
+// deadlineCandidates returns the footer date text BuildWeekMessage may
+// legitimately have produced for the given deadline. BuildWeekMessage
+// computes its own footer from an internal time.Now() call, and
+// formatter.go has no seam to pin that "now" from a test (unlike the
+// pgstore/store packages' *At helpers). The footer is formatted without
+// seconds, so pinning a single expected string computed from a second,
+// independent time.Now() call races a minute boundary landing between the
+// two calls -- rare, but real: on the correct code, a test run unlucky
+// enough to straddle that boundary fails for a reason that has nothing to
+// do with whether the deadline argument was honoured.
+//
+// Bracketing "now" with a call from immediately before and immediately
+// after BuildWeekMessage runs removes that race: the internal call is
+// guaranteed (Go's monotonic clock reading) to land between the two, so
+// the minute-truncated footer must match the text derived from one end of
+// the bracket or the other.
+func deadlineCandidates(before, after time.Time, deadline time.Duration) []string {
+	const layout = "02 Jan 2006 15:04"
+	start := before.In(time.Local).Add(deadline).Format(layout)
+	end := after.In(time.Local).Add(deadline).Format(layout)
+	if start == end {
+		return []string{start}
+	}
+	return []string{start, end}
+}
+
+func containsAny(s string, candidates []string) bool {
+	for _, c := range candidates {
+		if strings.Contains(s, c) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestDeadlineUsesConfiguredDuration(t *testing.T) {
 	// The footer date must move with the deadline argument, not a fixed
 	// 40h baked into the package — that's the whole point of V5-27.
+	beforeShort := time.Now()
 	short, err := BuildWeekMessage(
 		store.WeekPayload{Season: "regular", Week: 1},
 		testTeams(),
 		nil,
 		1*time.Hour,
 	)
+	afterShort := time.Now()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
+	beforeLong := time.Now()
 	long, err := BuildWeekMessage(
 		store.WeekPayload{Season: "regular", Week: 1},
 		testTeams(),
 		nil,
 		200*time.Hour,
 	)
+	afterLong := time.Now()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	shortDeadline := time.Now().In(time.Local).Add(1 * time.Hour).Format("02 Jan 2006 15:04")
-	longDeadline := time.Now().In(time.Local).Add(200 * time.Hour).Format("02 Jan 2006 15:04")
-	if !strings.Contains(short, shortDeadline) {
-		t.Errorf("expected footer to use the 1h deadline %q, got:\n%s", shortDeadline, short)
+
+	shortCandidates := deadlineCandidates(beforeShort, afterShort, 1*time.Hour)
+	longCandidates := deadlineCandidates(beforeLong, afterLong, 200*time.Hour)
+	if !containsAny(short, shortCandidates) {
+		t.Errorf("expected footer to use the 1h deadline (one of %q), got:\n%s", shortCandidates, short)
 	}
-	if !strings.Contains(long, longDeadline) {
-		t.Errorf("expected footer to use the 200h deadline %q, got:\n%s", longDeadline, long)
+	if !containsAny(long, longCandidates) {
+		t.Errorf("expected footer to use the 200h deadline (one of %q), got:\n%s", longCandidates, long)
 	}
 	if short == long {
 		t.Errorf("messages built with different deadlines must not be identical")
