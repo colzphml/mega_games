@@ -356,8 +356,6 @@ services:
     command: -config.file=/etc/loki/config.yaml
     mem_limit: 320m
     logging: *default-logging
-    ports:
-      - "${LOKI_EXPOSE_PORT:-3100}:3100"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/ready"]
       interval: 10s
