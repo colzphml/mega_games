@@ -30,8 +30,10 @@ services:
       # empirically, see task-V5-38-report.md.
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       # Bounds the JVM heap; mem_limit below leaves headroom on top of
-      # it for metaspace/off-heap/page cache. Values confirmed on the
-      # target Pi itself: 254 MB at rest, 305 MB under load.
+      # it for metaspace/off-heap/page cache. Confirmed on the target
+      # Pi itself under a 2000-message load test (4x a real week's
+      # volume): 254 MB idle, 315 MB while writing, 370 MB after
+      # reading back - 72% of the 512m limit below, at peak.
       KAFKA_HEAP_OPTS: "-Xms128m -Xmx256m"
     mem_limit: 512m
     logging: *default-logging
@@ -41,13 +43,27 @@ services:
       # empirically to exit non-zero when the broker process is
       # unresponsive (SIGSTOP'd from outside its PID namespace) and 0
       # again once it resumes - see task-V5-38-report.md.
+      #
+      # Budget, confirmed on the target Pi: startup to first healthy
+      # takes 25s, well inside the 60s start_period below - no need to
+      # widen that further. But a frozen broker doesn't refuse the
+      # connection, it accepts and then never answers, so a failed
+      # check hangs for the full `timeout` before Docker kills it: the
+      # real cost per attempt is timeout + interval, not interval
+      # alone. At the previous retries: 10 that measured 252s
+      # (10 * (10+15), almost exactly) to go unhealthy on the Pi - over
+      # four minutes of a frozen broker still reporting healthy, with
+      # autoheal not intervening and dependents already failing. That
+      # retry count was deliberate slack from before the Pi's boot time
+      # was known; now that it's measured at 25s, the slack buys
+      # nothing but blindness. retries: 5 gives 5 * (10+15) = 125s
+      # (~2 minutes) to detect a genuinely dead broker, while still
+      # needing five consecutive failures - not one slow check - to
+      # flip a healthy broker unhealthy.
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1"]
       interval: 15s
       timeout: 10s
-      retries: 10
-      # The JVM is slower to come up than Redpanda was, especially on
-      # the Pi; a short start_period like the old broker's 30s risks
-      # flapping through unhealthy on first boot.
+      retries: 5
       start_period: 60s
     labels:
       - autoheal=true
