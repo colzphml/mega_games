@@ -38,7 +38,7 @@
 | V5-29 README и AGENTS.md | ✅ | `v5/29-docs` | b2a0e94 |
 | V5-30 Миграция и выкатка | ⬜ | `v5/30-release` | — |
 | V5-31 Устойчивость headless | ✅ | `v5/31-headless-resilience` | 06726c9 |
-| V5-32 gochrome и контекст вызова | 🟡 | `v5/32-gochrome-ctx` | — |
+| V5-32 gochrome и контекст вызова | ✅ | `v5/32-gochrome-ctx` | 8776b8e |
 | V5-33 Устойчивость обработчиков | ✅ | `v5/33-processor-robustness` | 5340d8b |
 | V5-34 MinIO: версия и healthcheck | ✅ | `v5/34-minio-pin` | 7933bb1 |
 | V5-35 Защита от повторного захвата | ✅ | `v5/35-claim-guard` | d69413f |
