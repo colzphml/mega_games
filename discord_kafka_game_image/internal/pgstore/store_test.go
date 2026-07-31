@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/colzphml/mega_games/internal/common/pgtest"
+	"github.com/colzphml/mega_games/internal/common/queue"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -133,5 +134,68 @@ func TestMoveToFailedSkipsAlreadyProcessedMessage(t *testing.T) {
 		t.Errorf("game_image_failed has %d rows for an already-processed "+
 			"message, want 0: this is what would shrink game_image_status "+
 			"below the row count history is expected to keep", failedCount)
+	}
+}
+
+// --- Exact-boundary tests ---
+//
+// These pin last_attempt_at to precisely queue.StaleCutoff(now, interval)
+// -- not "just now", not "long ago" -- by computing the cutoff once in the
+// test and reusing that exact time.Time value both for the write and (via
+// the now-injected *At helpers) for the query. A non-strict <= at the SQL
+// level would make both of these tests observe the row as eligible; only
+// a strict < excludes a claim exactly at the boundary. This is the same
+// off-by-one that used to cause duplicate Telegram posts (V5-07) -- a
+// send taking exactly one threshold's worth of time was reclaimed while
+// still in flight.
+
+func TestListPendingExcludesStuckClaimExactlyAtThreshold(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	retryInterval := time.Minute
+
+	if _, err := s.EnsureMessage(ctx, "msg-boundary-list", []byte(`{"game_id":"1"}`)); err != nil {
+		t.Fatalf("ensure message: %v", err)
+	}
+
+	now := time.Now()
+	cutoff := queue.StaleCutoff(now, retryInterval)
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE game_image_status SET status = $1, last_attempt_at = $2 WHERE message_id = $3`,
+		StatusInProgress(), cutoff, "msg-boundary-list"); err != nil {
+		t.Fatalf("pin row to the threshold boundary: %v", err)
+	}
+
+	pending, err := s.listPendingAt(ctx, 100, retryInterval, now)
+	if err != nil {
+		t.Fatalf("list pending: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("got %d pending, want 0: a claim exactly at the staleness "+
+			"threshold has not yet gone stale -- only strictly older claims "+
+			"may be retried", len(pending))
+	}
+}
+
+func TestTouchAttemptRejectsClaimExactlyAtThreshold(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	retryInterval := time.Minute
+
+	if _, err := s.EnsureMessage(ctx, "msg-boundary-touch", []byte(`{"game_id":"2"}`)); err != nil {
+		t.Fatalf("ensure message: %v", err)
+	}
+
+	now := time.Now()
+	cutoff := queue.StaleCutoff(now, retryInterval)
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE game_image_status SET status = $1, last_attempt_at = $2 WHERE message_id = $3`,
+		StatusInProgress(), cutoff, "msg-boundary-touch"); err != nil {
+		t.Fatalf("pin row to the threshold boundary: %v", err)
+	}
+
+	if err := s.touchAttemptAt(ctx, "msg-boundary-touch", retryInterval, now); err == nil {
+		t.Error("a claim exactly at the staleness threshold must not be " +
+			"reclaimable yet -- only strictly older claims may be stolen")
 	}
 }

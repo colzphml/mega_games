@@ -108,7 +108,18 @@ func (s *Store) getMessage(ctx context.Context, messageID string) (Message, erro
 }
 
 func (s *Store) TouchAttempt(ctx context.Context, messageID string, retryAfter time.Duration) error {
-	cutoff := queue.StaleCutoff(time.Now(), retryAfter)
+	return s.touchAttemptAt(ctx, messageID, retryAfter, time.Now())
+}
+
+// touchAttemptAt is TouchAttempt with the "now" reference made explicit so
+// tests can pin a row's last_attempt_at to precisely
+// queue.StaleCutoff(now, retryAfter) and check which side of the SQL
+// comparison it falls on -- something not reachable by pinning against a
+// live time.Now() call, which always drifts a little between the row
+// being written and the query running. Production always goes through
+// TouchAttempt.
+func (s *Store) touchAttemptAt(ctx context.Context, messageID string, retryAfter time.Duration, now time.Time) error {
+	cutoff := queue.StaleCutoff(now, retryAfter)
 	res, err := s.pool.Exec(
 		ctx,
 		`UPDATE game_image_status
@@ -201,6 +212,13 @@ func (s *Store) MoveToFailed(ctx context.Context, messageID string, details map[
 // ones abandoned mid-flight by a crashed worker. It replaces the Mongo
 // implementation that reprocessPending relied on.
 func (s *Store) ListPending(ctx context.Context, limit int, retryInterval time.Duration) ([]Message, error) {
+	return s.listPendingAt(ctx, limit, retryInterval, time.Now())
+}
+
+// listPendingAt is ListPending with the "now" reference made explicit; see
+// touchAttemptAt for why tests need this seam to hit the exact staleness
+// boundary. Production always goes through ListPending.
+func (s *Store) listPendingAt(ctx context.Context, limit int, retryInterval time.Duration, now time.Time) ([]Message, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
@@ -208,7 +226,7 @@ func (s *Store) ListPending(ctx context.Context, limit int, retryInterval time.D
 	var rows pgx.Rows
 	var err error
 	if retryInterval > 0 {
-		cutoff := queue.StaleCutoff(time.Now(), retryInterval)
+		cutoff := queue.StaleCutoff(now, retryInterval)
 		rows, err = s.pool.Query(ctx,
 			`SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload, image
 			 FROM game_image_status
