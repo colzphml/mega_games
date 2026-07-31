@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v24.2.18
@@ -17,6 +23,7 @@ services:
     environment:
       TZ: ${TZ}
     mem_limit: 700m
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
       interval: 30s
@@ -40,6 +47,8 @@ services:
       TZ: ${TZ}
     env_file:
       - .env
+    mem_limit: 64m
+    logging: *default-logging
     entrypoint:
       - /bin/bash
       - -c
@@ -74,6 +83,8 @@ services:
       - .env
     environment:
       TZ: ${TZ}
+    mem_limit: 64m
+    logging: *default-logging
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -98,6 +109,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    mem_limit: 256m
+    logging: *default-logging
     ports:
       - "${POSTGRES_EXPOSE_PORT:-5432}:5432"
     healthcheck:
@@ -121,6 +134,8 @@ services:
       TZ: ${TZ}
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    mem_limit: 192m
+    logging: *default-logging
     ports:
       - "${MINIO_EXPOSE_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
@@ -142,6 +157,8 @@ services:
       - .env
     environment:
       TZ: ${TZ}
+    mem_limit: 64m
+    logging: *default-logging
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -171,6 +188,8 @@ services:
       - .env
     environment:
       TZ: ${TZ}
+    mem_limit: 64m
+    logging: *default-logging
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -200,6 +219,8 @@ services:
       - .env
     environment:
       TZ: ${TZ}
+    mem_limit: 512m
+    logging: *default-logging
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -231,6 +252,8 @@ services:
       - .env
     environment:
       TZ: ${TZ}
+    mem_limit: 64m
+    logging: *default-logging
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -260,6 +283,8 @@ services:
       - .env
     environment:
       TZ: ${TZ}
+    mem_limit: 64m
+    logging: *default-logging
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -297,6 +322,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       HEALTH_ADDR: ":8081"
       TZ: ${TZ}
+    mem_limit: 128m
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -317,6 +344,8 @@ services:
     environment:
       AUTOHEAL_CONTAINER_LABEL: autoheal
       AUTOHEAL_START_PERIOD: 180
+    mem_limit: 32m
+    logging: *default-logging
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -328,6 +357,8 @@ services:
     profiles:
       - monitoring
     command: -config.file=/etc/loki/config.yaml
+    mem_limit: 256m
+    logging: *default-logging
     ports:
       - "${LOKI_EXPOSE_PORT:-3100}:3100"
     healthcheck:
@@ -350,6 +381,8 @@ services:
     profiles:
       - monitoring
     command: -config.file=/etc/promtail/config.yaml
+    mem_limit: 128m
+    logging: *default-logging
     depends_on:
       loki:
         condition: service_healthy
@@ -380,6 +413,8 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
+    mem_limit: 256m
+    logging: *default-logging
     depends_on:
       loki:
         condition: service_healthy
