@@ -134,7 +134,7 @@ services:
       TZ: ${TZ}
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-    mem_limit: 192m
+    mem_limit: 256m
     logging: *default-logging
     ports:
       - "${MINIO_EXPOSE_PORT:-9000}:9000"
@@ -357,7 +357,7 @@ services:
     profiles:
       - monitoring
     command: -config.file=/etc/loki/config.yaml
-    mem_limit: 256m
+    mem_limit: 320m
     logging: *default-logging
     ports:
       - "${LOKI_EXPOSE_PORT:-3100}:3100"
@@ -381,7 +381,7 @@ services:
     profiles:
       - monitoring
     command: -config.file=/etc/promtail/config.yaml
-    mem_limit: 128m
+    mem_limit: 192m
     logging: *default-logging
     depends_on:
       loki:
@@ -413,7 +413,7 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
-    mem_limit: 256m
+    mem_limit: 320m
     logging: *default-logging
     depends_on:
       loki:
