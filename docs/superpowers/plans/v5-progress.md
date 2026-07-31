@@ -30,7 +30,7 @@
 | V5-21 Тесты NeonSportz | ✅ | `v5/21-neonsportz-tests` | 9b5f0f8 |
 | V5-22 Тесты MinIO/Redpanda | ✅ | `v5/22-storage-tests` | eb20946 |
 | V5-23 Redpanda | ✅ | `v5/23-redpanda` | 7ace3e5 |
-| V5-24 Лимиты и логи | ⬜ | `v5/24-limits` | — |
+| V5-24 Лимиты и логи | ✅ | `v5/24-limits` | c45f7d1 |
 | V5-25 Безопасность | ⬜ | `v5/25-security` | — |
 | V5-26 Обязательный TAG | ⬜ | `v5/26-tag-required` | — |
 | V5-27 Конфигурация и хост | ⬜ | `v5/27-config` | — |
