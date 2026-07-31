@@ -86,7 +86,7 @@ type Client struct {
 	renderMu sync.Mutex
 	renders  int
 
-	// browserMu guards the four fields below, independently of renderMu.
+	// browserMu guards the fields below, independently of renderMu.
 	// Close cancels the live browser through them without taking
 	// renderMu first — see Close's doc comment for why that has to be a
 	// separate lock from the one that serializes renders.
@@ -95,7 +95,16 @@ type Client struct {
 	allocCancel   context.CancelFunc
 	browserCtx    context.Context
 	browserCancel context.CancelFunc
+	// closed is set once by Close and never unset. ensureBrowserLocked
+	// checks it before publishing a newly created browser — see the
+	// fix-round-1 comment there — so a Close that lands while a browser
+	// is mid-creation is not lost.
+	closed bool
 }
+
+// errClosed is returned once Close has been called: the client does not
+// allocate new browsers afterwards.
+var errClosed = errors.New("gochrome: client is closed")
 
 // maxRendersPerBrowser bounds how long one Chromium process lives.
 // A weekly batch is about twelve games, so in normal operation the
@@ -128,16 +137,42 @@ func NewClient(ctx context.Context, cfg config.Config) (*Client, error) {
 // screenshotRecapWrapper — then opens a new tab on that same browser
 // instead of spawning its own process.
 //
-// The four fields this touches (allocCtx/allocCancel/browserCtx/
-// browserCancel) are guarded by c.browserMu, not c.renderMu, even though
-// this method itself only ever runs under c.renderMu: Close reads and
-// cancels them from outside c.renderMu on purpose (see Close's doc
-// comment), so every access to them — from here, from teardown, and from
-// Close — goes through c.browserMu to stay race-free.
+// The fields this touches (allocCtx/allocCancel/browserCtx/browserCancel/
+// closed) are guarded by c.browserMu, not c.renderMu, even though this
+// method itself only ever runs under c.renderMu: Close reads and cancels
+// them from outside c.renderMu on purpose (see Close's doc comment), so
+// every access to them — from here, from teardown, and from Close — goes
+// through c.browserMu to stay race-free.
+//
+// Fix round 1 (protocol race found by review, not by the race detector):
+// creating a browser takes a while (NewExecAllocator, NewContext,
+// warmUpBrowser) and none of that runs under browserMu — it can't, or
+// Close would be stuck behind it for as long as creation takes, which is
+// exactly what browserMu exists to avoid. That leaves a window between
+// starting creation and publishing its result where Close has nothing
+// published yet to cancel: teardown finds every field nil and is a no-op,
+// Close reports success, and creation then publishes a browser afterwards
+// that nothing will ever cancel again — reproduced deliberately (start
+// creation, sleep 3ms, call Close; the browser reliably gets published
+// after Close returns). The old single-mutex code could not have this bug
+// — Close and creation shared one lock, so Close either waited for
+// creation to finish or was guaranteed to see its result — so this is a
+// direct consequence of splitting the lock, not an inherited one. The
+// fix: re-check c.closed right before publishing, under the same
+// browserMu Close sets it under. If Close ran in between, cancel the
+// browser just created instead of publishing it, and report errClosed —
+// Close's promise ("nothing is left running") ends up true regardless of
+// how creation and Close interleave, without Close ever having to wait on
+// creation to find out which happened first.
 func (c *Client) ensureBrowserLocked() (context.Context, error) {
 	c.browserMu.Lock()
 	browserCtx := c.browserCtx
+	closed := c.closed
 	c.browserMu.Unlock()
+
+	if closed {
+		return nil, errClosed
+	}
 
 	if browserCtx != nil && c.renders < maxRendersPerBrowser {
 		c.renders++
@@ -172,6 +207,16 @@ func (c *Client) ensureBrowserLocked() (context.Context, error) {
 	}
 
 	c.browserMu.Lock()
+	if c.closed {
+		// Close ran while warm-up was in flight (anywhere between the
+		// two browserMu reads above and here) and left this exact
+		// signal for exactly this situation — see the fix-round-1
+		// comment above. Undo the creation instead of publishing it.
+		c.browserMu.Unlock()
+		browserCancel()
+		allocCancel()
+		return nil, errClosed
+	}
 	c.allocCtx, c.allocCancel = allocCtx, allocCancel
 	c.browserCtx, c.browserCancel = newBrowserCtx, browserCancel
 	c.browserMu.Unlock()
@@ -331,7 +376,17 @@ func (c *Client) renderScreenshot(
 // screenshotRecapWrapper), so cancelling it here reaches an in-flight
 // render immediately; that render then unwinds and releases renderMu on
 // its own, without Close needing to wait around for it.
+//
+// Close also marks the client closed before tearing anything down, so a
+// browser that is still being created concurrently — not yet published,
+// so teardown here cannot see or cancel it — gets refused at publish time
+// instead of outliving this call unnoticed. See ensureBrowserLocked's
+// fix-round-1 comment.
 func (c *Client) Close() error {
+	c.browserMu.Lock()
+	c.closed = true
+	c.browserMu.Unlock()
+
 	c.teardown()
 	log.Info().Msg("closing gochrome client")
 	return nil

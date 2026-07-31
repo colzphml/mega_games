@@ -474,3 +474,144 @@ func TestFetchHonorsCallerContextCancellation(t *testing.T) {
 			"appears to be ignored")
 	}
 }
+
+// -------------------------------------------------------------------
+// Fix round 1: a protocol race in the browserMu/renderMu split itself,
+// found by review (not by -race — every access to the guarded fields is
+// correctly synchronized; the bug is about *when* Close's intent becomes
+// visible relative to creation publishing, not about unsynchronized
+// memory access). See the "Fix round 1" comment on ensureBrowserLocked in
+// gochrome.go for the mechanism.
+// -------------------------------------------------------------------
+
+// TestCloseDuringBrowserCreationDoesNotLeakTheBrowser reproduces the race
+// directly: start a browser creation, give it only a few milliseconds'
+// head start — nowhere near enough to actually finish spawning a Chrome
+// process, reading its debugger address, dialing, and completing the CDP
+// handshake, all of which take at least tens of milliseconds even on a
+// fast, idle machine — then call Close. Before the fix, Close saw nothing
+// published yet, reported success, and the creation that was already in
+// flight published a browser afterwards that nothing would ever cancel
+// again. Run several times, matching how this was actually found
+// (reproduced repeatedly on demand, not once by luck): this is not
+// expected to be timing-flaky given how large the margin is between "a
+// few ms" and "how long a real Chrome allocation takes", but repetition
+// is cheap insurance against this machine being unusually fast, and
+// mirrors the review's own three-for-three reproduction.
+func TestCloseDuringBrowserCreationDoesNotLeakTheBrowser(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spins up real Chrome processes; skipped in -short mode")
+	}
+
+	for i := 0; i < 5; i++ {
+		t.Run("race", func(t *testing.T) {
+			client := &Client{headless: true}
+
+			type createResult struct {
+				ctx context.Context
+				err error
+			}
+			done := make(chan createResult, 1)
+			go func() {
+				client.renderMu.Lock()
+				ctx, err := client.ensureBrowserLocked()
+				client.renderMu.Unlock()
+				done <- createResult{ctx, err}
+			}()
+
+			time.Sleep(3 * time.Millisecond)
+
+			if err := client.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+
+			var created createResult
+			select {
+			case created = <-done:
+				t.Logf("ensureBrowserLocked (racing Close): ctx-non-nil=%v err=%v", created.ctx != nil, created.err)
+			case <-time.After(90 * time.Second):
+				t.Fatal("ensureBrowserLocked racing Close did not finish in time")
+			}
+
+			client.browserMu.Lock()
+			published := client.browserCtx
+			client.browserMu.Unlock()
+
+			if published != nil {
+				t.Fatal("a browser is published after Close returned: Close reported success " +
+					"without stopping (or preventing) this concurrently-created browser, so " +
+					"nothing will ever cancel its process")
+			}
+		})
+	}
+}
+
+// TestCloseTearsDownAnAlreadyPublishedBrowser is the first of the two
+// "opposite" cases the fix must not break: Close on a client whose
+// browser is already published and idle (no creation, no render racing
+// it) must still tear it down cleanly, exactly as before this round's
+// change.
+func TestCloseTearsDownAnAlreadyPublishedBrowser(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spins up a real Chrome process; skipped in -short mode")
+	}
+
+	client := &Client{headless: true}
+	client.renderMu.Lock()
+	_, err := client.ensureBrowserLocked()
+	client.renderMu.Unlock()
+	if err != nil {
+		t.Fatalf("warm up browser: %v", err)
+	}
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	client.browserMu.Lock()
+	browserCtx := client.browserCtx
+	allocCtx := client.allocCtx
+	closed := client.closed
+	client.browserMu.Unlock()
+
+	if browserCtx != nil || allocCtx != nil {
+		t.Error("browser/allocator fields should be cleared after Close tears down a published browser")
+	}
+	if !closed {
+		t.Error("closed should be set after Close")
+	}
+}
+
+// TestEnsureBrowserLockedFailsCleanlyAfterClose is the second "opposite"
+// case: creating a browser right after Close must fail fast and cleanly,
+// not hang, and not spend a full Chrome startup only to throw the result
+// away — the early c.closed check in ensureBrowserLocked exists
+// specifically to avoid that waste, in addition to the late recheck
+// covering the race itself.
+func TestEnsureBrowserLockedFailsCleanlyAfterClose(t *testing.T) {
+	if testing.Short() {
+		t.Skip("would spin up a real Chrome process if the fast path were broken; skipped in -short mode")
+	}
+
+	client := &Client{headless: true}
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close on a never-used client: %v", err)
+	}
+
+	start := time.Now()
+	client.renderMu.Lock()
+	ctx, err := client.ensureBrowserLocked()
+	client.renderMu.Unlock()
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, errClosed) {
+		t.Errorf("ensureBrowserLocked after Close = %v, want errClosed", err)
+	}
+	if ctx != nil {
+		t.Error("ensureBrowserLocked after Close must not return a usable browser context")
+	}
+	if elapsed > time.Second {
+		t.Errorf("ensureBrowserLocked after Close took %s, want near-instant (the fast-path "+
+			"closed check should short-circuit before ever touching Chrome)", elapsed)
+	}
+}
