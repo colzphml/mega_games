@@ -44,55 +44,15 @@ func main() {
 	log.Info().Msg("connected to postgres")
 
 	// Setup HTTP server
-	mux := http.NewServeMux()
-
 	store := admin.NewStore(pool)
-	teamsHandler, err := admin.NewTeamsHandler(store)
+	router, err := newRouter(cfg, store)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to create teams handler")
+		log.Fatal().Err(err).Msg("failed to build router")
 	}
-
-	dashboardHandler, err := admin.NewDashboardHandler(store)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to create dashboard handler")
-	}
-
-	scheduleHandler := admin.NewScheduleHandler(store)
-
-	mux.HandleFunc("GET /", dashboardHandler.Dashboard)
-	mux.HandleFunc("GET /logs", dashboardHandler.Logs)
-	mux.HandleFunc("GET /schedule", dashboardHandler.Schedule)
-
-	mux.HandleFunc("GET /teams", teamsHandler.List)
-	mux.HandleFunc("POST /teams", teamsHandler.Create)
-	mux.HandleFunc("GET /teams/{name}", teamsHandler.Get)
-	mux.HandleFunc("GET /teams/{name}/edit", teamsHandler.EditForm)
-	mux.HandleFunc("PUT /teams/{name}", teamsHandler.Update)
-	mux.HandleFunc("DELETE /teams/{name}", teamsHandler.Delete)
-
-	mux.HandleFunc("POST /schedule/upload", scheduleHandler.Upload)
-
-	// Serve static assets
-	// Assumes running from project root
-	fs := http.FileServer(http.Dir("cmd/admin_panel/assets"))
-	mux.Handle("GET /assets/", http.StripPrefix("/assets/", fs))
-
-	// The admin UI and API sit behind basic auth: it exposes
-	// DELETE /teams/{name} and POST /schedule/upload, which used to be
-	// reachable by anyone on the network. /health stays outside the
-	// guard because the container healthcheck has no credentials.
-	guarded := admin.BasicAuth(cfg.AdminUser, cfg.AdminPassword, mux)
-
-	root := http.NewServeMux()
-	root.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
-	})
-	root.Handle("/", guarded)
 
 	srv := &http.Server{
 		Addr:              cfg.HealthAddr,
-		Handler:           root,
+		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
