@@ -212,15 +212,9 @@ func (p *Processor) handleMessage(ctx context.Context, msg pgstore.Message) erro
 		return fmt.Errorf("missing game payload")
 	}
 
-	// msg.Image is a JSONB column: NULL comes back as an empty/nil byte
-	// slice, and an explicit JSON null unmarshals into a nil pointer too.
-	// Either case means "no image yet, must fetch" — anything else means
-	// there is already a stored image to reuse instead of regenerating it.
-	var meta *pgstore.ImageMeta
-	if len(msg.Image) > 0 {
-		if err := json.Unmarshal(msg.Image, &meta); err != nil {
-			return fmt.Errorf("unmarshal image meta: %w", err)
-		}
+	meta, err := decodeStoredImageMeta(msg.Image)
+	if err != nil {
+		return err
 	}
 	if meta == nil {
 		fetchCtx, cancel := context.WithTimeout(ctx, p.cfg.FetchTimeout)
@@ -293,6 +287,40 @@ func (p *Processor) handleMessage(ctx context.Context, msg pgstore.Message) erro
 
 	p.log.Info().Str("message_id", msg.ID).Str("game_id", payload.GameID).Msg("game image processed")
 	return nil
+}
+
+// decodeStoredImageMeta interprets the raw JSONB bytes of the image
+// column and returns the existing image to reuse, or nil if there is
+// none yet. msg.Image is nil/empty when the column is unset (SQL
+// NULL); an explicit JSON null unmarshals into a nil pointer; and {}
+// — a syntactically valid but semantically empty object — unmarshals
+// into a non-nil, all-zero-value struct. The first two are obviously
+// "no image yet, must fetch"; {} is not written by this service (the
+// only writer, below, always fills every field in together) but is a
+// plausible typo for NULL when manually clearing a row for
+// reprocessing, and must be treated the same way rather than being
+// read as "image already exists".
+//
+// ObjectKey is what decides that: it is the MinIO object key the
+// writer always sets alongside every other field, and it is the one
+// value downstream needs to actually fetch the bytes back (the
+// telegram game sender rejects an event whose object key is empty).
+// Bucket doesn't work as the signal instead — it is a fixed
+// configuration value, identical on every row regardless of whether
+// an image was ever stored — and the remaining fields (ImageURL,
+// ContentType, Size, Fetcher, StoredAt) are derived or descriptive
+// rather than proof that an upload happened.
+func decodeStoredImageMeta(raw []byte) (*pgstore.ImageMeta, error) {
+	var meta *pgstore.ImageMeta
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &meta); err != nil {
+			return nil, fmt.Errorf("unmarshal image meta: %w", err)
+		}
+	}
+	if meta != nil && strings.TrimSpace(meta.ObjectKey) == "" {
+		return nil, nil
+	}
+	return meta, nil
 }
 
 func parseGamePayload(value, baseURL, league string) (pgstore.GamePayload, error) {
