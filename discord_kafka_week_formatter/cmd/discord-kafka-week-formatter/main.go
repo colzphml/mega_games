@@ -215,6 +215,10 @@ func (p *Processor) consumeLoop(ctx context.Context) error {
 			p.log.Info().Str("message_id", messageID).Msg("week message already processed")
 			continue
 		}
+		if stored.Status == store.StatusInProgress() {
+			p.log.Info().Str("message_id", messageID).Msg("week message already in progress")
+			continue
+		}
 		if stored.Attempts >= p.cfg.MaxAttempts {
 			if err := p.store.MoveToFailed(ctx, messageID, kafkaDetails(msg, "max attempts on consume")); err != nil {
 				p.log.Error().Err(err).Str("message_id", messageID).Msg("failed to move week message to failed table")
@@ -227,6 +231,15 @@ func (p *Processor) consumeLoop(ctx context.Context) error {
 }
 
 func (p *Processor) processMessage(ctx context.Context, messageID string, payload store.WeekPayload, details map[string]any) {
+	// A failed claim means another worker already holds this message.
+	// Skipping is the point: it is what stops discord_kafka_week_formatter
+	// from formatting and sending the same week post twice when the
+	// synchronous consumer and the retry-loop goroutine race on it.
+	if err := p.store.TouchAttempt(ctx, messageID, p.cfg.ProcessRetryInterval); err != nil {
+		p.log.Info().Err(err).Str("message_id", messageID).Msg("week message not eligible for processing")
+		return
+	}
+
 	if err := p.handleMessage(ctx, messageID, payload); err != nil {
 		updated, updateErr := p.store.RecordAttempt(ctx, messageID, err.Error())
 		if updateErr != nil {
