@@ -80,12 +80,21 @@ type Client struct {
 	headless      bool
 	screenshotDir string
 
-	mu            sync.Mutex
+	// renderMu serializes renders end to end (see renderScreenshot's doc
+	// comment): only one render uses the shared browser at a time.
+	// renders is only ever read or written while renderMu is held.
+	renderMu sync.Mutex
+	renders  int
+
+	// browserMu guards the four fields below, independently of renderMu.
+	// Close cancels the live browser through them without taking
+	// renderMu first — see Close's doc comment for why that has to be a
+	// separate lock from the one that serializes renders.
+	browserMu     sync.Mutex
 	allocCtx      context.Context
 	allocCancel   context.CancelFunc
 	browserCtx    context.Context
 	browserCancel context.CancelFunc
-	renders       int
 }
 
 // maxRendersPerBrowser bounds how long one Chromium process lives.
@@ -105,7 +114,7 @@ func NewClient(ctx context.Context, cfg config.Config) (*Client, error) {
 
 // ensureBrowserLocked returns a warmed-up chromedp browser context,
 // creating or recycling the underlying Chrome process as needed. Callers
-// must hold c.mu.
+// must hold c.renderMu.
 //
 // This is deliberately three layers, not two. chromedp.NewContext only
 // attaches a new *tab* to an existing browser if the parent context it's
@@ -118,13 +127,24 @@ func NewClient(ctx context.Context, cfg config.Config) (*Client, error) {
 // chromedp.NewContext(browserCtx) call — one per game, in
 // screenshotRecapWrapper — then opens a new tab on that same browser
 // instead of spawning its own process.
+//
+// The four fields this touches (allocCtx/allocCancel/browserCtx/
+// browserCancel) are guarded by c.browserMu, not c.renderMu, even though
+// this method itself only ever runs under c.renderMu: Close reads and
+// cancels them from outside c.renderMu on purpose (see Close's doc
+// comment), so every access to them — from here, from teardown, and from
+// Close — goes through c.browserMu to stay race-free.
 func (c *Client) ensureBrowserLocked() (context.Context, error) {
-	if c.browserCtx != nil && c.renders < maxRendersPerBrowser {
+	c.browserMu.Lock()
+	browserCtx := c.browserCtx
+	c.browserMu.Unlock()
+
+	if browserCtx != nil && c.renders < maxRendersPerBrowser {
 		c.renders++
-		return c.browserCtx, nil
+		return browserCtx, nil
 	}
 
-	c.teardownLocked()
+	c.teardown()
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("hide-scrollbars", true),
@@ -136,42 +156,111 @@ func (c *Client) ensureBrowserLocked() (context.Context, error) {
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+	newBrowserCtx, browserCancel := chromedp.NewContext(allocCtx)
 
-	// No timeout wrapped around this first Run: chromedp's docs warn that
-	// a context timeout on the very first Run tears down the whole
-	// browser it just allocated, not just this call.
-	if err := chromedp.Run(browserCtx); err != nil {
+	// No deadline goes on newBrowserCtx itself for this first Run:
+	// chromedp's docs warn that a context timeout on the very first Run
+	// tears down the whole browser it just allocated, not just this
+	// call. warmUpBrowser bounds the wall-clock wait a different way —
+	// see its doc comment — so a hang here can't block every future
+	// render and Close forever without ever cancelling the context the
+	// browser's whole lifetime is tied to.
+	if err := warmUpBrowser(newBrowserCtx, warmupTimeout); err != nil {
 		browserCancel()
 		allocCancel()
 		return nil, fmt.Errorf("warm up browser: %w", err)
 	}
 
+	c.browserMu.Lock()
 	c.allocCtx, c.allocCancel = allocCtx, allocCancel
-	c.browserCtx, c.browserCancel = browserCtx, browserCancel
+	c.browserCtx, c.browserCancel = newBrowserCtx, browserCancel
+	c.browserMu.Unlock()
 	c.renders = 1
-	return c.browserCtx, nil
+	return newBrowserCtx, nil
 }
 
-// teardownLocked cancels the current browser and its allocator, if any,
-// and clears the fields so the next ensureBrowserLocked call starts
-// fresh. Callers must hold c.mu.
-func (c *Client) teardownLocked() {
-	if c.browserCancel != nil {
-		c.browserCancel()
-		c.browserCancel = nil
-		c.browserCtx = nil
+// warmupTimeout bounds ensureBrowserLocked's warm-up Run — see
+// warmUpBrowser.
+const warmupTimeout = 60 * time.Second
+
+// warmUpBrowser runs an empty chromedp.Run to allocate the browser
+// process and complete its CDP handshake, without letting a hang there
+// block forever.
+//
+// chromedp already bounds the two steps before that handshake: up to 20s
+// (ExecAllocator's wsURLReadTimeout) waiting for Chrome to print its
+// debugger address on startup, then up to 10s (Browser's dialTimeout) to
+// open the DevTools websocket. What it does not bound is the step right
+// after — chromedp.Run waiting for the browser to report its first tab
+// (see chromedp's (*Context).newTarget) — which only ever selects on the
+// context given to Run, forever, with no timeout of its own. Since
+// ensureBrowserLocked cannot put a deadline on that context (see its doc
+// comment) and only ever runs under c.renderMu, a hang exactly there
+// would block every later render and Close indefinitely. warmupTimeout is
+// set well above chromedp's own ~30s (20s+10s) so it never fires on a
+// merely slow, but working, startup — it exists only to cover the one
+// phase chromedp itself leaves open-ended.
+//
+// browserCtx must not carry a deadline (see ensureBrowserLocked for why);
+// the bound here is enforced by racing Run in its own goroutine against a
+// timer, not by attaching one to browserCtx. If Run does not finish in
+// time, the caller — not this function — is responsible for cancelling
+// browserCtx and its allocator; that unblocks the abandoned goroutine
+// (chromedp.Run's internal waits are themselves context-aware, per the
+// above) so it does not leak, and its result, if it does eventually
+// arrive, is simply discarded.
+func warmUpBrowser(browserCtx context.Context, timeout time.Duration) error {
+	return runBounded(timeout, func() error { return chromedp.Run(browserCtx) })
+}
+
+// runBounded runs fn in its own goroutine and returns its result, unless
+// timeout elapses first, in which case it stops waiting and reports a
+// timeout error instead of fn's eventual result. runBounded cannot
+// forcibly stop fn itself; fn must react on its own to whatever it was
+// given (e.g. give up once a context it closed over is cancelled), or the
+// goroutine keeps running in the background until it does.
+func runBounded(timeout time.Duration, fn func() error) error {
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("timed out after %s", timeout)
 	}
-	if c.allocCancel != nil {
-		c.allocCancel()
-		c.allocCancel = nil
-		c.allocCtx = nil
+}
+
+// teardown cancels the current browser and its allocator, if any, and
+// clears the fields so the next ensureBrowserLocked call starts fresh.
+//
+// Unlike the rest of the browser lifecycle, teardown is called both from
+// under c.renderMu (from ensureBrowserLocked and renderScreenshot's error
+// path) and without it (from Close, deliberately — see Close's doc
+// comment). That is safe: the fields are only ever touched through
+// c.browserMu, cancelling an already-cancelled context is a no-op, and
+// the actual cancel calls happen after browserMu is released so a slow
+// one (cancelling can block briefly on the OS process actually exiting)
+// never holds up a concurrent reader of the fields.
+func (c *Client) teardown() {
+	c.browserMu.Lock()
+	browserCancel := c.browserCancel
+	allocCancel := c.allocCancel
+	c.browserCtx, c.browserCancel = nil, nil
+	c.allocCtx, c.allocCancel = nil, nil
+	c.browserMu.Unlock()
+
+	if browserCancel != nil {
+		browserCancel()
+	}
+	if allocCancel != nil {
+		allocCancel()
 	}
 }
 
 // renderScreenshot renders one game's recap screenshot using the shared
-// browser. It holds c.mu for the entire render, not just for obtaining
-// the browser context.
+// browser. It holds c.renderMu for the entire render, not just for
+// obtaining the browser context.
 //
 // consumeLoop (the main Kafka loop) and retryLoop (a ticker-driven
 // goroutine that retries stuck messages) both call Fetch and genuinely
@@ -184,35 +273,66 @@ func (c *Client) teardownLocked() {
 // doesn't comfortably fit two concurrent Chromium tabs (150-250 MB each)
 // anyway, so serializing renders trades a little latency under rare
 // contention for removing the race entirely.
+//
+// ctx is the caller's context (Fetch's ctx parameter). It is threaded
+// down into screenshotRecapWrapper, where cancelling it stops this
+// specific render without affecting the shared browser — see
+// screenshotRecapWrapper and mergeCancel.
 func (c *Client) renderScreenshot(
+	ctx context.Context,
 	gameURL string,
 	overallTimeout, sleepAfter, assetsWait time.Duration,
 	viewportW, viewportH int,
 ) ([]byte, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.renderMu.Lock()
+	defer c.renderMu.Unlock()
 
 	browserCtx, err := c.ensureBrowserLocked()
 	if err != nil {
 		return nil, err
 	}
 
-	pngBytes, err := screenshotRecapWrapper(browserCtx, gameURL, overallTimeout, sleepAfter, assetsWait, viewportW, viewportH)
+	pngBytes, err := screenshotRecapWrapper(ctx, browserCtx, gameURL, overallTimeout, sleepAfter, assetsWait, viewportW, viewportH)
 	if err != nil {
-		// The browser (or the tab it just ran) may be in a bad state.
-		// Invalidate it so the next call gets a fresh browser instead of
-		// every remaining game in the batch failing the same way until
-		// the render counter happens to roll over.
-		c.teardownLocked()
+		if ctx.Err() == nil {
+			// The failure wasn't the caller giving up — ctx is still
+			// live — so the browser (or the tab it just ran) may itself
+			// be in a bad state. Invalidate it so the next call gets a
+			// fresh browser instead of every remaining game in the
+			// batch failing the same way until the render counter
+			// happens to roll over. A caller-side cancellation says
+			// nothing about the browser's health, so it must not
+			// trigger the same recycle: the whole point of reusing the
+			// browser is that one call's cancellation doesn't cost the
+			// next call a fresh Chrome process.
+			c.teardown()
+		}
 		return nil, err
 	}
 	return pngBytes, nil
 }
 
+// Close cancels the shared browser and its allocator so a stopping
+// service is not left waiting on whatever render happens to be in
+// flight.
+//
+// It deliberately never touches c.renderMu. A render holds renderMu for
+// its entire duration — anywhere up to defaultTimeout — specifically so
+// concurrent renders can't step on each other's browser (see
+// renderScreenshot's doc comment); waiting for that same lock here would
+// mean Close blocks for however long the in-flight render still has left,
+// which defeats the point of calling Close during shutdown — Docker
+// Compose gives a container about ten seconds to stop before killing it
+// outright.
+//
+// Instead, Close reaches directly for the browser/allocator cancel funcs
+// through teardown, which takes its own, separate lock (browserMu). Every
+// render's context is a descendant of the browser context (see
+// screenshotRecapWrapper), so cancelling it here reaches an in-flight
+// render immediately; that render then unwinds and releases renderMu on
+// its own, without Close needing to wait around for it.
 func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.teardownLocked()
+	c.teardown()
 	log.Info().Msg("closing gochrome client")
 	return nil
 }
@@ -243,7 +363,7 @@ func (c *Client) Fetch(ctx context.Context, gameID string) (types.Result, error)
 	}
 
 	// 2) Headless Chrome screenshot
-	pngBytes, err := c.renderScreenshot(gameURL, defaultTimeout,
+	pngBytes, err := c.renderScreenshot(ctx, gameURL, defaultTimeout,
 		defaultSleepAfter, defaultAssetsWait, defaultViewportW, defaultViewportH)
 	if err != nil {
 		log.Error().Err(err).Str("game_id", gameID).Msg("screenshot failed, fallback to metadata card")
@@ -511,11 +631,39 @@ func fetchRecapJSON(apiURL, userAgent string, to time.Duration) (*RecapResponse,
 // Headless Chrome screenshot (wrapper-based)
 // -------------------------
 
+// mergeCancel returns a context that is done when either base or trigger
+// is done. Cancellation only ever flows downward from it, exactly like a
+// plain context.WithCancel(base) child — nothing done to the returned
+// context, including trigger firing, ever reaches back up to cancel base
+// or trigger themselves.
+//
+// context.WithCancel(base) alone only lets base cancel the result; what's
+// missing is a way to also fold trigger's cancellation in without making
+// trigger the actual parent — which matters here because the real parent
+// has to stay a descendant of base for chromedp to recognize it (see
+// screenshotRecapWrapper). context.AfterFunc supplies exactly that: it
+// calls cancel once trigger is done without changing whose child the
+// result actually is.
+func mergeCancel(base, trigger context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(base)
+	stop := context.AfterFunc(trigger, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
 // screenshotRecapWrapper renders one game on a new tab of an already
 // warmed-up browser. browserCtx must be a context returned by
 // ensureBrowserLocked (i.e. one whose chromedp Context.Browser is already
 // allocated) — see the comment there for why that distinction matters.
+//
+// callCtx is the render's caller-supplied context (Fetch's ctx parameter,
+// by way of renderScreenshot). Cancelling it stops this render — see
+// mergeCancel — but can never cancel browserCtx: the browser is meant to
+// outlive any single call, including a cancelled one.
 func screenshotRecapWrapper(
+	callCtx context.Context,
 	browserCtx context.Context,
 	gameURL string,
 	overallTimeout time.Duration,
@@ -525,6 +673,17 @@ func screenshotRecapWrapper(
 ) ([]byte, error) {
 	ctx, cancelTimeout := context.WithTimeout(browserCtx, overallTimeout)
 	defer cancelTimeout()
+
+	// Fold callCtx's cancellation into ctx without making callCtx its
+	// actual parent — chromedp.NewContext below needs its parent to stay
+	// a descendant of browserCtx so it recognizes the already-allocated
+	// browser and opens a new tab instead of launching a second Chrome
+	// process (see ensureBrowserLocked). mergeCancel gets us one-way
+	// cancellation instead: callCtx being done cancels ctx, but nothing
+	// that happens to ctx afterwards — including this render finishing
+	// normally — ever reaches callCtx or browserCtx.
+	ctx, cancelCall := mergeCancel(ctx, callCtx)
+	defer cancelCall()
 
 	// New tab on the existing browser, not a new process: browserCtx
 	// already carries an allocated Browser, so this Run attaches to it.
