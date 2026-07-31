@@ -125,7 +125,17 @@ services:
       - megagames-net
 
   minio:
-    image: minio/minio:latest
+    # Pinned, but not for the usual drift reason alone. minio/minio was
+    # archived by its owner on 2026-04-25 and no further community
+    # images are published, so :latest was never going to move again -
+    # it already resolved to this exact release (verified by digest,
+    # both `docker pull`ed: sha256:14cea493d9a34af32f524e538b8346cf79
+    # f3321eff8e708c1e2960462bd8936e). Pinning here just makes that
+    # explicit and stops relying on a tag nobody maintains anymore.
+    # There will be no more security patches under this tag either -
+    # the project has no fixed-release alternative to move to; that's
+    # a decision for whoever owns the next deploy, not this pin.
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:

@@ -119,7 +119,12 @@ func startMinio(t *testing.T) (endpoint, accessKey, secretKey string) {
 	}
 
 	ctx := context.Background()
-	container, err := tcminio.Run(ctx, "minio/minio:RELEASE.2024-09-13T20-26-02Z")
+	// Same release docker-compose.yml pins minio to in production: minio/minio
+	// was archived by its owner in April 2026 and this is the last image it
+	// ever published, so there is no newer version to track. Keeping the two
+	// in sync still matters (it's what catches a real version skew the next
+	// time either one changes) even though this one won't move on its own.
+	container, err := tcminio.Run(ctx, "minio/minio:RELEASE.2025-09-07T16-13-09Z")
 	if err != nil {
 		t.Fatalf("start minio: %v", err)
 	}
