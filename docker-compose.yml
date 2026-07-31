@@ -146,6 +146,18 @@ services:
     logging: *default-logging
     ports:
       - "${MINIO_EXPOSE_PORT:-9000}:9000"   # game-image links used directly by the dashboard
+    healthcheck:
+      # No wget in this image, unlike the Go services' health endpoints.
+      # `mc ready local` is MinIO's own documented healthcheck for this
+      # exact setup: it ships in the image, and "local" needs no prior
+      # `mc alias set` - it always means the server mc is running in.
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    labels:
+      - autoheal=true
     volumes:
       - minio-data:/data
     networks:
@@ -234,7 +246,7 @@ services:
       postgres:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
       interval: 30s
@@ -298,7 +310,7 @@ services:
       postgres:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
       interval: 30s
