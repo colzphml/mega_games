@@ -155,6 +155,18 @@ func (s *Store) MarkProcessed(ctx context.Context, messageID string) error {
 	return nil
 }
 
+// MoveToFailed archives a message that has exhausted its retry budget.
+//
+// reprocessPending and consumeLoop can both reach here for the same
+// message_id after a stale in_progress claim gets reclaimed (see
+// TouchAttempt): the reclaiming attempt may have already finished and
+// called MarkProcessed by the time the original, belated attempt's own
+// failure exhausts its budget and lands here. If so, the status loaded
+// below is already statusProcessed; deleting the row in that case would
+// silently drop a successfully-delivered message from game_image_status.
+// So the status fetched for the failed-row insert doubles as the guard:
+// an already-processed message is left alone instead of being archived
+// as failed.
 func (s *Store) MoveToFailed(ctx context.Context, messageID string, details map[string]any) error {
 	detailsJSON, err := json.Marshal(details)
 	if err != nil {
@@ -166,6 +178,12 @@ func (s *Store) MoveToFailed(ctx context.Context, messageID string, details map[
 		row := tx.QueryRow(ctx, `SELECT message_id, status, attempts, created_at, COALESCE(last_error, ''), last_attempt_at, payload, image FROM game_image_status WHERE message_id = $1`, messageID)
 		if err := row.Scan(&msg.ID, &msg.Status, &msg.Attempts, &msg.CreatedAt, &msg.LastError, &msg.LastAttempt, &msg.Payload, &msg.Image); err != nil {
 			return fmt.Errorf("load message for fail: %w", err)
+		}
+
+		if msg.Status == statusProcessed {
+			s.log.Info().Str("message_id", messageID).
+				Msg("skip moving already-processed message to failed table")
+			return nil
 		}
 
 		if _, err := tx.Exec(ctx, `INSERT INTO game_image_failed (message_id, attempts, payload, image, last_error, first_seen_at, last_attempt_at, details) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8::jsonb)`, msg.ID, msg.Attempts, msg.Payload, msg.Image, msg.LastError, msg.CreatedAt, msg.LastAttempt, detailsJSON); err != nil {
