@@ -36,7 +36,8 @@
 | V5-27 Конфигурация и хост | ✅ | `v5/27-config` | 7d752e4 |
 | V5-28 Документация для агентов | ✅ | `v5/28-agent-docs` | 389ef53 |
 | V5-29 README и AGENTS.md | ✅ | `v5/29-docs` | b2a0e94 |
-| V5-30 Миграция и выкатка | ⬜ | `v5/30-release` | — |
+| V5-30 Миграция и выкатка | 🟡 | `v5/30-release` | попытка 1 откачена |
+| V5-38 Kafka в режиме KRaft | ✅ | `v5/38-kafka-kraft` | 8f8b270 |
 | V5-31 Устойчивость headless | ✅ | `v5/31-headless-resilience` | 06726c9 |
 | V5-32 gochrome и контекст вызова | ✅ | `v5/32-gochrome-ctx` | 8776b8e |
 | V5-33 Устойчивость обработчиков | ✅ | `v5/33-processor-robustness` | 5340d8b |
