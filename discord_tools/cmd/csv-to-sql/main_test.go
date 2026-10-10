@@ -100,6 +100,44 @@ func TestReadSchedulePreservesStageMapping(t *testing.T) {
 	}
 }
 
+func TestReadScheduleAcceptsPostgresIntegerMaximum(t *testing.T) {
+	data := "homeTeam,awayTeam,seasonIndex,stageIndex,weekIndex\nBills,Jets,2147483647,2147483648,2147483647\n"
+	games, err := readSchedule(writeSchedule(t, data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []gameRow{{SeasonIndex: 2147483647, Stage: true, WeekIndex: 2147483647, HomeTeam: "Bills", AwayTeam: "Jets"}}
+	if !reflect.DeepEqual(games, want) {
+		t.Fatalf("games = %#v, want %#v", games, want)
+	}
+}
+
+func TestReadScheduleRejectsPostgresIntegerOverflow(t *testing.T) {
+	headerAndValidRow := "homeTeam,awayTeam,seasonIndex,stageIndex,weekIndex\nBills,Jets,0,1,7\n"
+	for _, tc := range []struct {
+		field string
+		row   string
+	}{
+		{"seasonIndex", "Giants,Eagles,2147483648,1,7\n"},
+		{"weekIndex", "Giants,Eagles,0,1,2147483648\n"},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			games, err := readSchedule(writeSchedule(t, headerAndValidRow+tc.row))
+			if err == nil {
+				t.Fatalf("accepted INT overflow: %#v", games)
+			}
+			if len(games) != 0 {
+				t.Fatalf("invalid CSV returned partial games: %#v", games)
+			}
+			for _, fragment := range []string{"row 3", tc.field} {
+				if !strings.Contains(err.Error(), fragment) {
+					t.Errorf("error %q lacks context %q", err, fragment)
+				}
+			}
+		})
+	}
+}
+
 func writeSchedule(t *testing.T, data string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "games.csv")

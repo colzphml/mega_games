@@ -8,14 +8,16 @@
     <header><strong>Upload CSV</strong></header>
     <p>Upload the <code>MEGA_games.csv</code> file to update the schedule.</p>
     
-    <form hx-post="/schedule/upload" hx-encoding="multipart/form-data" hx-target="#upload-result">
+    <form hx-post="/schedule/upload" hx-encoding="multipart/form-data" hx-target="#upload-result"
+          hx-on::before-request="this.querySelector('button[type=submit]').setAttribute('aria-busy', 'true')"
+          hx-on::after-request="this.querySelector('button[type=submit]').setAttribute('aria-busy', 'false'); if (!event.detail.successful) { document.getElementById('upload-result').textContent = event.detail.xhr.responseText || 'Upload failed. Please try again.'; }">
         <label for="file">
             CSV File
             <input type="file" id="file" name="MEGA_games.csv" accept=".csv" required>
         </label>
-        <button type="submit" aria-busy="false" onclick="this.setAttribute('aria-busy', 'true')">Upload Schedule</button>
+        <button type="submit" aria-busy="false">Upload Schedule</button>
     </form>
     
-    <div id="upload-result"></div>
+    <div id="upload-result" aria-live="polite"></div>
 </article>
 {{end}}

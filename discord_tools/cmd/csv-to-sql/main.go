@@ -156,14 +156,18 @@ func readSchedule(path string) ([]gameRow, error) {
 			}
 		}
 		readIndex := func(name string) (int, error) {
-			index, err := strconv.Atoi(strings.TrimSpace(record[columns[name]]))
+			bits := strconv.IntSize
+			if name != "stageIndex" {
+				bits = 32 // season_index and week_index are PostgreSQL INT columns.
+			}
+			index, err := strconv.ParseInt(strings.TrimSpace(record[columns[name]]), 10, bits)
 			if err != nil {
 				return 0, fmt.Errorf("CSV row %d: invalid %s: %w", row, name, err)
 			}
 			if index < 0 {
 				return 0, fmt.Errorf("CSV row %d: %s must be nonnegative", row, name)
 			}
-			return index, nil
+			return int(index), nil
 		}
 		seasonIndex, err := readIndex("seasonIndex")
 		if err != nil {

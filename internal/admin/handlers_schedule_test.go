@@ -133,6 +133,48 @@ func TestScheduleUploadReturnsDatabaseError(t *testing.T) {
 	}
 }
 
+func TestScheduleUploadAcceptsPostgresIntegerMaximum(t *testing.T) {
+	store := &scheduleMemoryStore{}
+	response := httptest.NewRecorder()
+	data := "homeTeam,awayTeam,seasonIndex,stageIndex,weekIndex\nBills,Jets,2147483647,2147483648,2147483647\n"
+	NewScheduleHandler(store).Upload(response, scheduleUploadRequest(t, data))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d; body = %q", response.Code, response.Body.String())
+	}
+	want := []Game{{SeasonIndex: 2147483647, Stage: true, WeekIndex: 2147483647, Home: "Bills", Away: "Jets"}}
+	if !reflect.DeepEqual(store.games, want) {
+		t.Fatalf("stored games = %#v, want %#v", store.games, want)
+	}
+}
+
+func TestScheduleUploadRejectsPostgresIntegerOverflowBeforeWriting(t *testing.T) {
+	headerAndValidRow := "homeTeam,awayTeam,seasonIndex,stageIndex,weekIndex\nBills,Jets,0,1,7\n"
+	for _, tc := range []struct {
+		field string
+		row   string
+	}{
+		{"seasonIndex", "Giants,Eagles,2147483648,1,7\n"},
+		{"weekIndex", "Giants,Eagles,0,1,2147483648\n"},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			store := &scheduleMemoryStore{}
+			response := httptest.NewRecorder()
+			NewScheduleHandler(store).Upload(response, scheduleUploadRequest(t, headerAndValidRow+tc.row))
+			if response.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400; body = %q", response.Code, response.Body.String())
+			}
+			if len(store.games) != 0 {
+				t.Errorf("invalid upload wrote partial schedule: %#v", store.games)
+			}
+			for _, fragment := range []string{"row 3", tc.field} {
+				if !strings.Contains(response.Body.String(), fragment) {
+					t.Errorf("body %q lacks context %q", response.Body.String(), fragment)
+				}
+			}
+		})
+	}
+}
+
 type scheduleMemoryStore struct {
 	games []Game
 	err   error
