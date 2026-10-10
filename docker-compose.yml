@@ -80,9 +80,14 @@ services:
         condition: service_healthy
     environment:
       TZ: ${TZ}
+      # Kafka CLI defaults to -Xmx256M. Bound the heap separately from
+      # the container limit, leaving room for JVM native memory.
+      KAFKA_HEAP_OPTS: "-Xms32m -Xmx128m"
     env_file:
       - .env
-    mem_limit: 64m
+    # A topic-init run uses ~100 MiB on arm64; 64m forces it into swap
+    # even with a ready broker. This service exits after initialization.
+    mem_limit: 256m
     logging: *default-logging
     entrypoint:
       - /bin/bash
