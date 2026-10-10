@@ -27,6 +27,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Keep native Chrome coverage on AMD64; emulate only the saved Pi MinIO.
+      - name: Enable ARM64 containers
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ensure preserved MinIO image
+        env:
+          PUBLISH_MINIO_MIRROR: ${{ github.event_name != 'pull_request' && github.repository == 'colzphml/mega_games' }}
+        run: bash scripts/ensure-minio-image.sh
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
