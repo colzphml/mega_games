@@ -120,41 +120,73 @@ func readSchedule(path string) ([]gameRow, error) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	if _, err := reader.Read(); err != nil {
-		return nil, err
+	header, err := reader.Read()
+	if err == io.EOF {
+		return nil, fmt.Errorf("CSV header: empty file")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("CSV header: %w", err)
+	}
+	columns := make(map[string]int, len(header))
+	for i, name := range header {
+		name = strings.TrimSpace(name)
+		if _, exists := columns[name]; exists {
+			return nil, fmt.Errorf("CSV header: duplicate column %q", name)
+		}
+		columns[name] = i
+	}
+	for _, name := range []string{"homeTeam", "awayTeam", "seasonIndex", "stageIndex", "weekIndex"} {
+		if _, exists := columns[name]; !exists {
+			return nil, fmt.Errorf("CSV header: missing required column %q", name)
+		}
 	}
 
 	var games []gameRow
-	for {
+	for row := 2; ; row++ {
 		record, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
+			return nil, fmt.Errorf("CSV row %d: %w", row, err)
+		}
+		for _, name := range []string{"homeTeam", "awayTeam"} {
+			if strings.TrimSpace(record[columns[name]]) == "" {
+				return nil, fmt.Errorf("CSV row %d: missing %s", row, name)
+			}
+		}
+		readIndex := func(name string) (int, error) {
+			index, err := strconv.Atoi(strings.TrimSpace(record[columns[name]]))
+			if err != nil {
+				return 0, fmt.Errorf("CSV row %d: invalid %s: %w", row, name, err)
+			}
+			if index < 0 {
+				return 0, fmt.Errorf("CSV row %d: %s must be nonnegative", row, name)
+			}
+			return index, nil
+		}
+		seasonIndex, err := readIndex("seasonIndex")
+		if err != nil {
 			return nil, err
 		}
-		if len(record) <= 11 {
-			continue
-		}
-		seasonIndex, err := strconv.Atoi(record[9])
+		stageIndex, err := readIndex("stageIndex")
 		if err != nil {
-			return nil, fmt.Errorf("invalid season index: %w", err)
+			return nil, err
 		}
-		stageIndex, err := strconv.Atoi(record[10])
+		weekIndex, err := readIndex("weekIndex")
 		if err != nil {
-			return nil, fmt.Errorf("invalid stage index: %w", err)
-		}
-		weekIndex, err := strconv.Atoi(record[11])
-		if err != nil {
-			return nil, fmt.Errorf("invalid week index: %w", err)
+			return nil, err
 		}
 		games = append(games, gameRow{
 			SeasonIndex: seasonIndex,
 			Stage:       stageIndex > 0,
 			WeekIndex:   weekIndex,
-			HomeTeam:    record[3],
-			AwayTeam:    record[4],
+			HomeTeam:    record[columns["homeTeam"]],
+			AwayTeam:    record[columns["awayTeam"]],
 		})
+	}
+	if len(games) == 0 {
+		return nil, fmt.Errorf("CSV contains no games")
 	}
 	return games, nil
 }
