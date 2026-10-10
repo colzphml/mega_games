@@ -1,20 +1,26 @@
 package admin
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
 
 type ScheduleHandler struct {
-	store *Store
+	store scheduleStore
 }
 
-func NewScheduleHandler(store *Store) *ScheduleHandler {
+type scheduleStore interface {
+	UpsertGame(context.Context, Game) error
+}
+
+func NewScheduleHandler(store scheduleStore) *ScheduleHandler {
 	return &ScheduleHandler{
 		store: store,
 	}
@@ -35,61 +41,99 @@ func (h *ScheduleHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
-	if _, err := reader.Read(); err != nil {
-		log.Error().Err(err).Msg("failed to read CSV header")
-		http.Error(w, "Invalid CSV", http.StatusBadRequest)
+	games, err := readScheduleCSV(file)
+	if err != nil {
+		log.Error().Err(err).Msg("invalid schedule CSV")
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	count := 0
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Error().Err(err).Msg("failed to read CSV record")
-			http.Error(w, "Error reading CSV", http.StatusInternalServerError)
-			return
-		}
-
-		if len(record) <= 11 {
-			continue
-		}
-
-		seasonIndex, err := strconv.Atoi(record[9])
-		if err != nil {
-			log.Debug().Err(err).Str("value", record[9]).Msg("skipping row due to invalid season index")
-			continue
-		}
-		stageIndex, err := strconv.Atoi(record[10])
-		if err != nil {
-			log.Debug().Err(err).Str("value", record[10]).Msg("skipping row due to invalid stage index")
-			continue
-		}
-		weekIndex, err := strconv.Atoi(record[11])
-		if err != nil {
-			log.Debug().Err(err).Str("value", record[11]).Msg("skipping row due to invalid week index")
-			continue
-		}
-
-		game := Game{
-			SeasonIndex: seasonIndex,
-			Stage:       stageIndex > 0,
-			WeekIndex:   weekIndex,
-			Home:        record[3],
-			Away:        record[4],
-		}
-
+	for _, game := range games {
 		if err := h.store.UpsertGame(r.Context(), game); err != nil {
 			log.Error().Err(err).Interface("game", game).Msg("failed to upsert game")
 			http.Error(w, "Database error", http.StatusInternalServerError)
 			return
 		}
-		count++
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, "<div class='p-4 bg-green-100 text-green-800 rounded'>Successfully uploaded %d games</div>", count)
+	fmt.Fprintf(w, "<div class='p-4 bg-green-100 text-green-800 rounded'>Successfully uploaded %d games</div>", len(games))
+}
+
+func readScheduleCSV(input io.Reader) ([]Game, error) {
+	reader := csv.NewReader(input)
+	header, err := reader.Read()
+	if err == io.EOF {
+		return nil, fmt.Errorf("CSV header: empty file")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("CSV header: %w", err)
+	}
+	columns := make(map[string]int, len(header))
+	for i, name := range header {
+		name = strings.TrimSpace(name)
+		if _, exists := columns[name]; exists {
+			return nil, fmt.Errorf("CSV header: duplicate column %q", name)
+		}
+		columns[name] = i
+	}
+	for _, name := range []string{"homeTeam", "awayTeam", "seasonIndex", "stageIndex", "weekIndex"} {
+		if _, exists := columns[name]; !exists {
+			return nil, fmt.Errorf("CSV header: missing required column %q", name)
+		}
+	}
+
+	var games []Game
+	for row := 2; ; row++ {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("CSV row %d: %w", row, err)
+		}
+		for _, name := range []string{"homeTeam", "awayTeam"} {
+			if strings.TrimSpace(record[columns[name]]) == "" {
+				return nil, fmt.Errorf("CSV row %d: missing %s", row, name)
+			}
+		}
+		readIndex := func(name string) (int, error) {
+			bits := strconv.IntSize
+			if name != "stageIndex" {
+				bits = 32 // season_index and week_index are PostgreSQL INT columns.
+			}
+			index, err := strconv.ParseInt(strings.TrimSpace(record[columns[name]]), 10, bits)
+			if err != nil {
+				return 0, fmt.Errorf("CSV row %d: invalid %s: %w", row, name, err)
+			}
+			if index < 0 {
+				return 0, fmt.Errorf("CSV row %d: %s must be nonnegative", row, name)
+			}
+			return int(index), nil
+		}
+		seasonIndex, err := readIndex("seasonIndex")
+		if err != nil {
+			return nil, err
+		}
+		stageIndex, err := readIndex("stageIndex")
+		if err != nil {
+			return nil, err
+		}
+		weekIndex, err := readIndex("weekIndex")
+		if err != nil {
+			return nil, err
+		}
+
+		games = append(games, Game{
+			SeasonIndex: seasonIndex,
+			Stage:       stageIndex > 0,
+			WeekIndex:   weekIndex,
+			Home:        record[columns["homeTeam"]],
+			Away:        record[columns["awayTeam"]],
+		})
+	}
+	if len(games) == 0 {
+		return nil, fmt.Errorf("CSV contains no games")
+	}
+	return games, nil
 }
